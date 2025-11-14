@@ -11,6 +11,20 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 57)
+- **Session Goals:** Unlock KEY/MOUSE coverage in the Windows integration suite without waiting for the native addon by building a WriteConsoleInput-backed harness the specs can use immediately.
+- **Completed:**
+  - Added `packages/tests/scripts/windows-write-console-input.ps1`, a PowerShell+C# helper that calls `_get_osfhandle` and `WriteConsoleInputW` so pseudo console handles can receive real `INPUT_RECORD`s.
+  - Introduced `packages/tests/src/native/windows-console-input-harness.ts`, which spawns the PowerShell helper on Windows hosts and exposes ergonomic `writeKeyEvent`/`writeMouseEvent` helpers for tests.
+  - Upgraded `packages/tests/src/native/windows-console-binding.integration.test.ts` to exercise real KEY_EVENT and MOUSE_EVENT records, and verified the suite wiring via `pnpm --filter @bubbletea/tests exec vitest run src/native/windows-console-binding.integration.test.ts` (skips on non-Windows as expected).
+- **What’s Next (priority order):**
+  1. Translate the Windows binding loader spec into `packages/tests/src/internal/windows-binding-loader.test.ts` and scaffold the loader implementation hooks so runtime code stays tests-first.
+  2. Flesh out the loader implementation (env overrides, addon vs. FFI fallback resolution) behind feature flags so the runtime can begin consuming it once the specs pass.
+  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
+  - Unable to execute the new PowerShell harness in this macOS environment; needs validation on a real Windows host/CI lane before shipping.
+
 ## 2025-11-14 (Session 56)
 - **Session Goals:** Codify the native Windows console binding contract and stand up the addon/ffi package scaffolding ahead of native work.
 - **Completed:**

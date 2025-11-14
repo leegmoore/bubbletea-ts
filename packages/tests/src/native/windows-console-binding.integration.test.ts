@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import type {
   WindowsConsoleBinding,
   WindowsInputRecord,
   WindowsPseudoConsole
 } from '@bubbletea/tea/internal';
+import type { WindowsConsoleInputHarness } from './windows-console-input-harness';
 
 const isWindowsHost = process.platform === 'win32';
 const describeOnWindows = isWindowsHost ? describe : describe.skip;
@@ -41,6 +42,7 @@ const nextRecord = async (
 
 describeOnWindows('WindowsConsoleBinding (native integration)', () => {
   let binding: WindowsConsoleBinding;
+  let inputHarness: WindowsConsoleInputHarness | undefined;
   const pseudoConsoles: WindowsPseudoConsole[] = [];
 
   const createPseudoConsole = (): WindowsPseudoConsole => {
@@ -48,6 +50,13 @@ describeOnWindows('WindowsConsoleBinding (native integration)', () => {
     pseudoConsoles.push(pseudo);
     return pseudo;
   };
+
+  beforeAll(async () => {
+    if (isWindowsHost) {
+      const mod = await import('./windows-console-input-harness');
+      inputHarness = mod.createWindowsConsoleInputHarness();
+    }
+  });
 
   beforeEach(async () => {
     binding = await loadWindowsConsoleBinding();
@@ -102,6 +111,80 @@ describeOnWindows('WindowsConsoleBinding (native integration)', () => {
     await iterator.return?.();
   });
 
-  it.todo('emits KEY_EVENT records when WriteConsoleInputW injects keypresses');
-  it.todo('emits MOUSE_EVENT records with wheel + button data');
+  it('emits KEY_EVENT records when WriteConsoleInputW injects keypresses', async () => {
+    const pseudo = createPseudoConsole();
+    const iterator = binding.readConsoleInput(pseudo.input)[Symbol.asyncIterator]();
+    const harness = ensureHarness(inputHarness);
+
+    harness.writeKeyEvent(pseudo.input, {
+      keyDown: true,
+      repeatCount: 2,
+      virtualKeyCode: 0x41,
+      virtualScanCode: 0x1e,
+      charCode: 'A'.charCodeAt(0),
+      controlKeyState: 0
+    });
+    harness.writeKeyEvent(pseudo.input, {
+      keyDown: false,
+      repeatCount: 1,
+      virtualKeyCode: 0x41,
+      virtualScanCode: 0x1e,
+      charCode: 0,
+      controlKeyState: 0
+    });
+
+    const down = await iterator.next();
+    expect(down.done).toBe(false);
+    expect(down.value).toEqual({
+      type: 'key',
+      keyDown: true,
+      repeatCount: 2,
+      charCode: 65,
+      virtualKeyCode: 0x41,
+      controlKeyState: 0
+    });
+
+    const up = await iterator.next();
+    expect(up.done).toBe(false);
+    expect(up.value).toEqual({
+      type: 'key',
+      keyDown: false,
+      repeatCount: 1,
+      charCode: 0,
+      virtualKeyCode: 0x41,
+      controlKeyState: 0
+    });
+    await iterator.return?.();
+  });
+
+  it('emits MOUSE_EVENT records with wheel + button data', async () => {
+    const pseudo = createPseudoConsole();
+    const iterator = binding.readConsoleInput(pseudo.input)[Symbol.asyncIterator]();
+    const harness = ensureHarness(inputHarness);
+
+    harness.writeMouseEvent(pseudo.input, {
+      position: { x: 12, y: 34 },
+      buttonState: 0x0002,
+      controlKeyState: 0x0008,
+      eventFlags: 0x0004
+    });
+
+    const record = await iterator.next();
+    expect(record.done).toBe(false);
+    expect(record.value).toEqual({
+      type: 'mouse',
+      position: { x: 12, y: 34 },
+      buttonState: 0x0002,
+      controlKeyState: 0x0008,
+      eventFlags: 0x0004
+    });
+    await iterator.return?.();
+  });
 });
+
+const ensureHarness = (harness: WindowsConsoleInputHarness | undefined): WindowsConsoleInputHarness => {
+  if (!harness) {
+    throw new Error('windows console input harness is not available outside Windows hosts');
+  }
+  return harness;
+};
