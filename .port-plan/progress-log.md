@@ -11,6 +11,18 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
 - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 62)
+- **Session Goals:** Capture the tty/signal backlog in a concrete translation plan before touching any new runtime code so the next tasks stay tests-first.
+- **Completed:**
+  - Re-read `.port-plan/plan.md`, `progress-log.md`, and `decision-log.md`, then created `.port-plan/tty-signal-plan.md` outlining the Go reference files, harness work, and ordered Vitest translation steps for tty raw-mode, `/dev/tty` fallbacks, Windows pseudo-console, SIGWINCH, and the Windows `coninput` reader.
+  - Surveyed the existing TypeScript tty/signal/signals test suites plus the runtime (`packages/tea/src/index.ts`, `internal/tty.ts`, windows binding harness) to document current coverage and the concrete gaps the new plan must close (e.g., `openInputTTY` error handling, resize listener cleanup, Windows console restore).
+- **What’s Next (priority order):**
+  1. Author the Go tty specs (`tty_raw_mode_test.go`, etc.) described in the new plan and translate them into expanded Vitest suites (`packages/tests/src/tty/*.test.ts`) covering raw-mode failure paths and `/dev/tty` fallbacks before touching runtime code.
+  2. Extend the Windows pseudo-console + input reader suites (`packages/tests/src/signals/windows-resize.test.ts`, `packages/tests/src/input/windows-*.test.ts`) to cover resize/KEY/MOUSE record fan-out and `cancelIo` semantics using `FakeWindowsConsoleBinding`.
+  3. Move on to the Unix SIGWINCH + release/suspend specs (`packages/tests/src/signals/resize.test.ts`, new `program/suspend.test.ts`) so terminal signal handling is fully captured before Phase 4 runtime work resumes.
+- **Blockers/Risks:**
+  - Native Windows binding implementation (Node-API addon + WriteConsoleInput validation) still needs a Windows-capable toolchain; OUT OF SCOPE FOR LOOP until that environment exists.
+
 ## 2025-11-14 (Session 61)
 - **Session Goals:** Close out the top keyboard/mouse “What’s Next” items so we can roll straight into the tty/signal planning work.
 - **Completed:**
