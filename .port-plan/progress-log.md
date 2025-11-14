@@ -11,6 +11,18 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 55)
+- **Session Goals:** Turn the top Windows “What’s Next” items into concrete implementation + workspace plans so future sessions can start translating specs/tests ahead of the native work.
+- **Completed:**
+  - Authored `docs/windows-console-binding-implementation.md`, detailing the Node-API entrypoints, worker-thread model for `ReadConsoleInputW`, resize/cancel semantics, build targets, CI lanes, and the tests-first coverage required before touching production code.
+  - Recorded decisions **D-048** (pseudo console addon plan) and **D-049** (pnpm workspace layout covering `@bubbletea/windows-binding` + FFI fallback) so loader/doc discussions now point at canonical module names and APIs.
+- **What’s Next (priority order):**
+  1. Draft `packages/tests/src/native/windows-console-binding.integration.test.ts` to codify the real Windows binding expectations (key/mouse/window records, cancelation, pseudo-console teardown) and gate it behind a Windows-only guard so the suite can be committed before the addon exists.
+  2. Scaffold the `packages/windows-binding` and `packages/windows-binding-ffi` packages (package.json, README, placeholder exports) so Vitest and the loader can resolve the modules while the native code remains unimplemented.
+  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-14 (Session 54)
 - **Session Goals:** Convert the top Windows task into a concrete binding-loader plan so runtime work can proceed tests-first.
 - **Completed:**
