@@ -11,6 +11,20 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 52)
+- **Session Goals:** Capture the Windows console lifecycle in docs and enforce the console-mode flag behaviour via tests-first before touching the runtime.
+- **Completed:**
+  - Authored `docs/windows-console.md` and linked it from `README.md`, covering ReleaseTerminal/RestoreTerminal expectations, pseudo-console queues, VT toggles, and the new console-mode guardrails.
+  - Added `packages/tests/src/program/windows-console-mode.test.ts` to assert that `ENABLE_WINDOW_INPUT`, `ENABLE_EXTENDED_FLAGS`, and `ENABLE_MOUSE_INPUT` flip exactly when `WithMouse*`/`EnableMouse*`/`DisableMouse` are invoked.
+  - Updated `packages/tea/src/internal/windows/constants.ts` and `packages/tea/src/index.ts` so the runtime prepares Windows console handles on startup, syncs the mouse flag with renderer commands, and restores the original modes during release/stop.
+  - Ran `pnpm vitest run packages/tests/src/program/windows-console-mode.test.ts packages/tests/src/input/windows-console-input.test.ts packages/tests/src/signals/windows-resize.test.ts` to keep the new suite and existing Windows coverage green.
+- **What’s Next (priority order):**
+  1. Extend the Vitest coverage to exercise `releaseTerminal`/`restoreTerminal` on Windows (using the fake binding) so console-mode restoration and mouse toggles are specified before any further runtime tweaks.
+  2. Draft the native binding loader plan (node-addon-api vs FFI plus fallback behaviour) so `getWindowsConsoleBinding()` can resolve a real implementation once a Windows-capable environment is available.
+  3. Prototype the native Windows binding itself—OUT OF SCOPE FOR LOOP until we have access to the Windows toolchain, but keep it tracked so the binding work starts immediately when the environment exists.
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP until we can compile/run on Windows.
+
 ## 2025-11-14 (Session 51)
 - **Session Goals:** Translate the Go `inputreader_windows.go`/`key_windows.go` behaviours into Vitest (tests-first) and wire the TypeScript runtime so Windows key/mouse records flow through the pseudo-console binding.
 - **Completed:**

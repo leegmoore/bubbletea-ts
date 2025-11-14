@@ -11,6 +11,9 @@ import {
   enableWindowsVirtualTerminalInput,
   enableWindowsVirtualTerminalOutput,
   getWindowsConsoleBinding,
+  WINDOWS_ENABLE_EXTENDED_FLAGS,
+  WINDOWS_ENABLE_MOUSE_INPUT,
+  WINDOWS_ENABLE_WINDOW_INPUT,
   openInputTTY,
   readAnsiInputs
 } from './internal';
@@ -926,6 +929,9 @@ export class Program {
   private releasedReportFocus = false;
   private windowsMouseTracking: 'none' | 'cell' | 'all' = 'none';
   private windowsMouseButtonState = 0;
+  private windowsConsoleInputHandle: number | null = null;
+  private windowsConsoleOriginalMode: number | null = null;
+  private windowsConsolePrepared = false;
 
   constructor(public model: Model | null) {
     this.renderer = new StandardRenderer(() => this.output, () => this.fps);
@@ -1147,6 +1153,7 @@ export class Program {
       try {
         if (ttyInput) {
           enableWindowsVirtualTerminalInput(ttyInput);
+          this.prepareWindowsConsoleInput(ttyInput);
         }
         if (ttyOutput) {
           enableWindowsVirtualTerminalOutput(ttyOutput);
@@ -1186,6 +1193,48 @@ export class Program {
     } finally {
       this.rawInputCleanup = undefined;
     }
+  }
+
+  private prepareWindowsConsoleInput(ttyInput: RawModeTty | null): void {
+    if (!isWindowsPlatform() || !ttyInput) {
+      return;
+    }
+    const binding = getWindowsConsoleBinding();
+    if (!binding) {
+      return;
+    }
+    const handle = this.resolveWindowsConsoleHandle(ttyInput);
+    if (handle == null) {
+      return;
+    }
+    const currentMode = binding.getConsoleMode(handle);
+    if (this.windowsConsoleOriginalMode == null) {
+      this.windowsConsoleOriginalMode = currentMode;
+    }
+    const startupMouseEnabled =
+      this.startupOptions.has(StartupFlag.MouseCellMotion) ||
+      this.startupOptions.has(StartupFlag.MouseAllMotion);
+    const shouldEnableMouse = startupMouseEnabled || this.windowsMouseTracking !== 'none';
+    let nextMode = currentMode | WINDOWS_ENABLE_WINDOW_INPUT | WINDOWS_ENABLE_EXTENDED_FLAGS;
+    if (shouldEnableMouse) {
+      nextMode |= WINDOWS_ENABLE_MOUSE_INPUT;
+    } else {
+      nextMode &= ~WINDOWS_ENABLE_MOUSE_INPUT;
+    }
+    if (nextMode !== currentMode) {
+      binding.setConsoleMode(handle, nextMode);
+    }
+    this.windowsConsoleInputHandle = handle;
+    this.windowsConsolePrepared = true;
+  }
+
+  private resolveWindowsConsoleHandle(stream: RawModeTty | null): number | null {
+    if (!stream || !stream.isTTY) {
+      return null;
+    }
+    const candidate = stream as RawModeTty & { fd?: number };
+    const fd = candidate.fd;
+    return typeof fd === 'number' ? fd : null;
   }
 
   private setupInput(): void {
@@ -1751,10 +1800,45 @@ export class Program {
       return;
     }
     this.windowsMouseTracking = mode;
+    this.applyWindowsMouseInputFlag();
   }
 
   private isWindowsMouseTrackingEnabled(): boolean {
     return this.windowsMouseTracking !== 'none';
+  }
+
+  private applyWindowsMouseInputFlag(): void {
+    if (!isWindowsPlatform() || !this.windowsConsolePrepared) {
+      return;
+    }
+    const binding = getWindowsConsoleBinding();
+    if (!binding) {
+      return;
+    }
+    const handle = this.windowsConsoleInputHandle;
+    if (handle == null) {
+      return;
+    }
+    let currentMode: number;
+    try {
+      currentMode = binding.getConsoleMode(handle);
+    } catch (error) {
+      this.handlePanic(error);
+      return;
+    }
+    const shouldEnableMouse = this.isWindowsMouseTrackingEnabled();
+    const hasMouse = (currentMode & WINDOWS_ENABLE_MOUSE_INPUT) !== 0;
+    if (shouldEnableMouse === hasMouse) {
+      return;
+    }
+    const nextMode = shouldEnableMouse
+      ? currentMode | WINDOWS_ENABLE_MOUSE_INPUT
+      : currentMode & ~WINDOWS_ENABLE_MOUSE_INPUT;
+    try {
+      binding.setConsoleMode(handle, nextMode);
+    } catch (error) {
+      this.handlePanic(error);
+    }
   }
 
   private stopRenderer(err: Error | null): void {
@@ -1764,10 +1848,10 @@ export class Program {
     } else {
       this.renderer.stop();
     }
-    this.restoreTerminalState();
+    this.restoreTerminalState(true);
   }
 
-  private restoreTerminalState(): void {
+  private restoreTerminalState(resetWindowsConsole = false): void {
     this.renderer.disableBracketedPaste();
     this.renderer.showCursor();
     this.disableMouseModes();
@@ -1780,7 +1864,52 @@ export class Program {
       this.renderer.exitAltScreen();
     }
 
+    this.restoreWindowsConsoleMode(resetWindowsConsole);
     this.restoreRawInput();
+  }
+
+  private restoreWindowsConsoleMode(resetState: boolean): void {
+    if (!isWindowsPlatform()) {
+      this.windowsConsolePrepared = false;
+      if (resetState) {
+        this.windowsConsoleInputHandle = null;
+        this.windowsConsoleOriginalMode = null;
+      }
+      return;
+    }
+
+    const binding = getWindowsConsoleBinding();
+    if (!binding) {
+      this.windowsConsolePrepared = false;
+      if (resetState) {
+        this.windowsConsoleInputHandle = null;
+        this.windowsConsoleOriginalMode = null;
+      }
+      return;
+    }
+
+    const handle = this.windowsConsoleInputHandle;
+    const originalMode = this.windowsConsoleOriginalMode;
+    if (handle == null || originalMode == null) {
+      this.windowsConsolePrepared = false;
+      if (resetState) {
+        this.windowsConsoleInputHandle = null;
+        this.windowsConsoleOriginalMode = null;
+      }
+      return;
+    }
+
+    try {
+      binding.setConsoleMode(handle, originalMode);
+    } catch {
+      // Ignore restore failures; the program is tearing down regardless.
+    } finally {
+      this.windowsConsolePrepared = false;
+      if (resetState) {
+        this.windowsConsoleInputHandle = null;
+        this.windowsConsoleOriginalMode = null;
+      }
+    }
   }
 
   private finish(err: Error | null): void {

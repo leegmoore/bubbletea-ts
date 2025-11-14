@@ -27,9 +27,11 @@ a framerate-based renderer, mouse support, focus reporting and more.
 To get started, see the tutorial below, the [examples][examples], the
 [docs][docs], the [video tutorials][youtube] and some common [resources](#libraries-we-use-with-bubble-tea).
 
-> Working on the TypeScript port? The renderer and logging guides now live in
-> `docs/rendering.md` and `docs/logging.md`, complete with Windows-specific
-> CRLF/fan-out coverage and reference scripts in `examples-ts/`.
+> Working on the TypeScript port? The renderer, logging, and Windows console
+> guides now live in `docs/rendering.md`, `docs/logging.md`, and
+> `docs/windows-console.md`, complete with Windows-specific CRLF/fan-out
+> coverage, pseudo-console lifecycle notes, and reference scripts in
+> `examples-ts/`.
 
 [youtube]: https://charm.sh/yt
 
