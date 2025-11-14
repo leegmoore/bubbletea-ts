@@ -10,10 +10,11 @@ import {
   createCancelableInputReader,
   enableWindowsVirtualTerminalInput,
   enableWindowsVirtualTerminalOutput,
+  getWindowsConsoleBinding,
   openInputTTY,
   readAnsiInputs
 } from './internal';
-import type { CancelableInputReader } from './internal';
+import type { CancelableInputReader, WindowsInputRecord } from './internal';
 
 export * from './key';
 export * from './mouse';
@@ -851,6 +852,9 @@ const sanitizeDimension = (value: unknown): number | null => {
   return normalized > 0 ? normalized : null;
 };
 
+const WINDOWS_DEFAULT_COLUMNS = 80;
+const WINDOWS_DEFAULT_ROWS = 24;
+
 type RawModeTty = NodeJS.ReadStream & {
   setRawMode(mode: boolean): NodeJS.ReadStream;
   isRaw?: boolean;
@@ -1269,7 +1273,17 @@ export class Program {
   }
 
   private setupResizeListener(): void {
-    if (this.resizeCleanup || !isWritableTty(this.output)) {
+    if (this.resizeCleanup) {
+      return;
+    }
+
+    const windowsCleanup = this.setupWindowsResizeListener();
+    if (windowsCleanup) {
+      this.resizeCleanup = windowsCleanup;
+      return;
+    }
+
+    if (!isWritableTty(this.output)) {
       return;
     }
 
@@ -1295,12 +1309,101 @@ export class Program {
     };
   }
 
+  private setupWindowsResizeListener(): (() => void) | null {
+    if (!isWindowsPlatform()) {
+      return null;
+    }
+
+    const binding = getWindowsConsoleBinding();
+    if (!binding) {
+      return null;
+    }
+
+    if (!isWritableTty(this.output)) {
+      return null;
+    }
+
+    const output = this.output as NodeJS.WriteStream;
+    const columns = sanitizeDimension(output.columns) ?? WINDOWS_DEFAULT_COLUMNS;
+    const rows = sanitizeDimension(output.rows) ?? WINDOWS_DEFAULT_ROWS;
+
+    let disposed = false;
+    let pseudoInput: number | null = null;
+    let pseudoHandle: number | null = null;
+
+    try {
+      const pseudoConsole = binding.createPseudoConsole({ columns, rows });
+      pseudoHandle = pseudoConsole.handle;
+      pseudoInput = pseudoConsole.input;
+    } catch (error) {
+      this.handlePanic(error);
+      return null;
+    }
+
+    if (pseudoInput == null || pseudoHandle == null) {
+      return null;
+    }
+
+    const cleanup = () => {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      try {
+        binding.cancelIo(pseudoInput);
+      } catch {
+        // Ignore cancel errors; we're shutting down regardless.
+      }
+      try {
+        binding.closePseudoConsole(pseudoHandle);
+      } catch {
+        // Ignore cleanup failures for the same reason.
+      }
+    };
+
+    const consumeRecords = async () => {
+      try {
+        for await (const record of binding.readConsoleInput(pseudoInput)) {
+          if (disposed) {
+            break;
+          }
+          this.handleWindowsConsoleRecord(record);
+        }
+      } catch (error) {
+        if (!disposed) {
+          this.handlePanic(error);
+        }
+      }
+    };
+
+    void consumeRecords();
+    this.emitWindowSizeFrom(output);
+
+    return cleanup;
+  }
+
   private emitWindowSizeFrom(stream: NodeJS.WritableStream | null): void {
     if (!this.isRunning() || !isWritableTty(stream)) {
       return;
     }
     const width = sanitizeDimension(stream.columns);
     const height = sanitizeDimension(stream.rows);
+    if (width == null || height == null) {
+      return;
+    }
+    this.enqueueMsg({
+      type: 'bubbletea/window-size',
+      width,
+      height
+    });
+  }
+
+  private handleWindowsConsoleRecord(record: WindowsInputRecord): void {
+    if (record.type !== 'window-buffer-size') {
+      return;
+    }
+    const width = sanitizeDimension(record.size.columns);
+    const height = sanitizeDimension(record.size.rows);
     if (width == null || height == null) {
       return;
     }

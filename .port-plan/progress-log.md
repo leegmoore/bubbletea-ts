@@ -8,6 +8,20 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
 - End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
 
+## 2025-11-14 (Session 50)
+- **Session Goals:** Port the Windows resize spec into Vitest (tests-first) and teach the runtime to source `WindowSizeMsg` from the console binding rather than Unix signals.
+- **Completed:**
+  - Added `packages/tests/src/signals/windows-resize.test.ts` plus harness helpers so the fake Windows console can drive `WINDOW_BUFFER_SIZE` records and assert the program emits `WindowSizeMsg` on Win32.
+  - Extended `FakeWindowsConsoleBinding` with pseudo-console tracking utilities to let tests enqueue resize events deterministically.
+  - Updated `Program.setupResizeListener()` to spin up a binding-backed watcher on Windows (creating/closing pseudo consoles, translating window-buffer-size records), while keeping the POSIX resize path intact.
+  - Ran `pnpm vitest run packages/tests/src/signals/windows-resize.test.ts packages/tests/src/signals/resize.test.ts` to keep both the new Windows suite and the existing Unix suite green.
+- **What’s Next (priority order):**
+  1. Translate `inputreader_windows.go`/`key_windows.go` behaviour into Vitest (mouse enablement, cancelation, key/mouse/window record parsing) and adapt the TS input reader to consume the binding stream (tests-first).
+  2. Flesh out the Windows input/resize documentation (ReleaseTerminal/RestoreTerminal contract, pseudo-console lifecycle) so downstream suspend/exec/signal work has a written reference.
+  3. Prototype the native Windows binding (node-addon-api vs ffi) once the fake harness-backed suites cover resize + input; still OUT OF SCOPE FOR LOOP until tests exist.
+- **Blockers/Risks:**
+  - Native Windows binding implementation remains outstanding; keep tracking as OUT OF SCOPE FOR LOOP until we can compile on a Windows-capable environment.
+
 ## 2025-11-14 (Session 49)
 - **Session Goals:** Unblock the next Windows test translations by extending the console binding + fake harness to stream resize/mouse/pseudo-console records under tests-first discipline.
 - **Completed:**

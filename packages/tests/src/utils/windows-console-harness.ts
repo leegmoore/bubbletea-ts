@@ -108,6 +108,7 @@ export class FakeWindowsConsoleBinding implements WindowsConsoleBinding {
   readonly cancelIoCalls: WindowsHandle[] = [];
   readonly resizePseudoConsoleCalls: Array<{ handle: WindowsPseudoConsoleHandle; size: WindowsSize }> = [];
   readonly closePseudoConsoleCalls: WindowsPseudoConsoleHandle[] = [];
+  readonly createdPseudoConsoles: WindowsPseudoConsoleHandle[] = [];
 
   private readonly modes = new Map<WindowsHandle, number>();
   private readonly recordQueues = new Map<WindowsHandle, AsyncRecordQueue<WindowsInputRecord>>();
@@ -147,6 +148,7 @@ export class FakeWindowsConsoleBinding implements WindowsConsoleBinding {
     const output = this.createHandle();
     this.ensureRecordQueue(input);
     this.pseudoConsoles.set(handle, { size: cloneSize(initialSize), input, output });
+    this.createdPseudoConsoles.push(handle);
     return { handle, input, output } satisfies WindowsPseudoConsole;
   }
 
@@ -229,6 +231,13 @@ export class FakeWindowsConsoleBinding implements WindowsConsoleBinding {
   pseudoConsoleSize(handle: WindowsPseudoConsoleHandle): WindowsSize | undefined {
     const state = this.pseudoConsoles.get(handle);
     return state ? cloneSize(state.size) : undefined;
+  }
+
+  latestPseudoConsoleHandle(): WindowsPseudoConsoleHandle | undefined {
+    if (this.createdPseudoConsoles.length === 0) {
+      return undefined;
+    }
+    return this.createdPseudoConsoles[this.createdPseudoConsoles.length - 1];
   }
 
   pseudoConsoleHandles(handle: WindowsPseudoConsoleHandle):
