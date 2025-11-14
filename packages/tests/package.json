@@ -1,0 +1,20 @@
+{
+  "name": "@bubbletea/tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vitest suites ported from the Go Bubble Tea repo",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@bubbletea/tea": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

@@ -27,6 +27,10 @@ a framerate-based renderer, mouse support, focus reporting and more.
 To get started, see the tutorial below, the [examples][examples], the
 [docs][docs], the [video tutorials][youtube] and some common [resources](#libraries-we-use-with-bubble-tea).
 
+> Working on the TypeScript port? The renderer and logging guides now live in
+> `docs/rendering.md` and `docs/logging.md`, complete with Windows-specific
+> CRLF/fan-out coverage and reference scripts in `examples-ts/`.
+
 [youtube]: https://charm.sh/yt
 
 ## By the way
@@ -306,6 +310,24 @@ if len(os.Getenv("DEBUG")) > 0 {
 	defer f.Close()
 }
 ```
+
+> **TypeScript port:** The same helper ships with `@bubbletea/tea`, including
+> the Windows CRLF + fan-out guarantees from the Vitest suites. See
+> `docs/logging.md` for full details.
+
+```ts
+import { LogToFile, createMultiWriterLogOptions } from '@bubbletea/tea';
+
+// Mirror logs to stderr on Windows without losing the file output.
+const fanOut = createMultiWriterLogOptions([process.stderr]);
+const logfile = LogToFile('debug.log', '[tea] ', fanOut);
+
+console.log('mirrored log entry');
+
+process.on('exit', () => logfile.end());
+```
+
+> See `examples-ts/logging/windows-mirror.ts` for a runnable fan-out demo.
 
 To see what’s being logged in real time, run `tail -f debug.log` while you run
 your program in another window.

@@ -21,3 +21,5 @@ tutorials/commands/commands
 .idea
 coverage.txt
 dist/
+node_modules/
+*.tsbuildinfo
