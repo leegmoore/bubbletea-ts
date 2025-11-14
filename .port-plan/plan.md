@@ -67,7 +67,7 @@ _Out of scope initially:_ re-imagining API ergonomics, hooking into browsers, or
 
 ### Phase 4 – Input, Signals, and Environment
 1. Translate the remaining Go specs (`key_test.go`, `mouse_test.go`, `tty_*`, `signals_*`) before shipping new TypeScript code so the tests continue to be the oracle.
-2. Build cross-platform input reader using `readline`, `process.stdin.setRawMode`, Windows-specific fallbacks (maybe `node-pty` or `windows-terminal-input` packages).
+2. Build the Unix/macOS input reader using `readline` and `process.stdin.setRawMode`. Windows-specific fallbacks are **out of scope** for this loop; defer them until a Windows toolchain is available.
 3. Implement key/mouse parsing logic (mirroring `key_*.go`, `mouse.go`). Use deterministic fixtures for tests.
 4. Implement signal handling wrappers for SIGINT, SIGWINCH, focus events.
 5. Ensure all the translated tests pass on Node (Vitest) and Go remains green.
@@ -97,8 +97,8 @@ _Out of scope initially:_ re-imagining API ergonomics, hooking into browsers, or
 | `renderer.go`, `standard_renderer.go`, `screen.go` | `src/renderer/*.ts`, `src/screen/*.ts` | Need diffing & throttling; rely on ANSI escape utilities.
 | `logging.go` | `src/renderer/logging.ts` | Provide deterministic output sink for tests.
 | `key.go`, `key_sequences.go`, platform-specific key files | `src/input/key/*.ts` | Parse escape sequences, map to semantic keys.
-| `mouse.go` | `src/input/mouse.ts` | Support cell/all motion, Microsoft compatibility.
-| `tty_*.go`, `inputreader_*.go`, `signals_*.go` | `src/tty/*.ts`, `src/os/*.ts` | Wrap Node’s TTY APIs; provide abstractions for tests.
+| `mouse.go` | `src/input/mouse.ts` | Support cell/all motion using ANSI/SGR mouse reporting.
+| `tty_*.go`, `inputreader_*.go`, `signals_*.go` | `src/tty/*.ts`, `src/os/*.ts` | Wrap Node’s TTY APIs; provide Unix/macOS abstractions for tests. (Windows-specific adapters deferred.)
 | `exec.go`, `exec_test.go` | `src/commands/exec.ts` | Wrap `child_process.spawn` with message bridging.
 | `tea_init.go` | `src/runtime/init.ts` | Provide CLI entry to bootstrap Model & Program.
 | Tests (`*_test.go`) | `tests/*.test.ts` | Port first; keep file-per-module mapping.
@@ -112,9 +112,9 @@ _Out of scope initially:_ re-imagining API ergonomics, hooking into browsers, or
 5. **Traceability:** maintain mapping table (Go test → TS test) inside `progress-log.md` so we know when parity is achieved.
 
 ## 8. Risks & Mitigations
-- **Terminal behaviour drift:** Node lacks native termios; implement wrappers with `node-pty`/`pty.js` and provide integration tests using `script` recording; rely on end-to-end jobs in CI.
+- **Terminal behaviour drift:** Node lacks native termios; implement wrappers/fakes that keep `setRawMode`/resize logic hermetic under tests.
 - **Timing/concurrency differences:** Use `async` constructs carefully; rely on deterministic scheduler for tests; consider `p-limit` or custom queue for commands.
-- **Windows-specific quirks:** Build separate adapter modules and run Windows CI early.
+- **Windows-specific work:** Deferred. Log anything requiring Windows as a blocker and move on.
 - **Large scope:** enforce incremental milestones per phase, update decision/progress logs diligently.
 
 ## 9. Tracking & Next Actions

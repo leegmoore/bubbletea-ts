@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   NewProgram,
   Program,
+  ProgramKilledError,
   ProgramOption,
+  ProgramPanicError,
   WithInput,
   WithInputTTY,
   WithOutput,
@@ -32,6 +34,13 @@ const createDefaultInputProgram = (input: PassThrough, ...options: ProgramOption
   const program = NewProgram(null, WithOutput(output), ...options);
   program.input = input;
   return { program, input, output };
+};
+
+const expectKilledWithPanic = (err: unknown) => {
+  expect(err).toBeInstanceOf(ProgramKilledError);
+  const panic = (err as ProgramKilledError).cause;
+  expect(panic).toBeInstanceOf(ProgramPanicError);
+  return panic as ProgramPanicError;
 };
 
 afterEach(() => {
@@ -98,6 +107,19 @@ describe('tty raw-mode semantics', () => {
 
     expect(input.rawModeCalls).toHaveLength(0);
   });
+
+  it('surfaces raw-mode enable failures as program panics', async () => {
+    const failure = new Error('raw-mode failed');
+    const input = new FakeTtyInput(false, {
+      beforeSetRawMode: (next) => (next ? failure : null)
+    });
+    const { program } = createProgram(input);
+
+    const err = await awaitRun(program).then((res) => res.err);
+    const panic = expectKilledWithPanic(err);
+    expect(panic.cause).toBe(failure);
+    expect(input.rawModeCalls).toEqual([true]);
+  });
 });
 
 describe('tty input fallback semantics', () => {
@@ -148,64 +170,34 @@ describe('tty input fallback semantics', () => {
     expect(manualInput.rawModeCalls).toHaveLength(0);
     expect(fallback.rawModeCalls).toEqual([true, false]);
   });
-});
 
-const mockWindowsPlatform = () => vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-
-describe('Windows virtual terminal enablement', () => {
-  it('enables VT input and output when running on Windows with tty streams', async () => {
-    mockWindowsPlatform();
-    const enableInputSpy = vi.spyOn(ttyInternals, 'enableWindowsVirtualTerminalInput');
-    const enableOutputSpy = vi.spyOn(ttyInternals, 'enableWindowsVirtualTerminalOutput');
-
-    const input = new FakeTtyInput(false);
-    const output = new FakeTtyOutput();
-    const program = NewProgram(null, WithInput(input), WithOutput(output));
-    const runPromise = awaitRun(program);
-
-    await waitFor(() => enableInputSpy.mock.calls.length > 0, {
-      timeoutMs: 500,
-      errorMessage: 'Windows VT input enablement never triggered'
+  it('surfaces fallback tty open errors as program panics when default input is not a tty', async () => {
+    const openError = new Error('fallback failed');
+    const openSpy = vi.spyOn(ttyInternals, 'openInputTTY').mockImplementation(() => {
+      throw openError;
     });
 
-    program.quit();
-    const result = await runPromise;
-    expectGracefulExit(result);
+    const { program } = createDefaultInputProgram(new NonTtyInput());
+    const err = await awaitRun(program).then((res) => res.err);
 
-    expect(enableInputSpy).toHaveBeenCalledWith(input);
-    expect(enableOutputSpy).toHaveBeenCalledWith(output);
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const panic = expectKilledWithPanic(err);
+    expect(panic.cause).toBe(openError);
   });
 
-  it('skips VT enablement when not running on Windows', async () => {
-    const enableInputSpy = vi.spyOn(ttyInternals, 'enableWindowsVirtualTerminalInput');
-    const enableOutputSpy = vi.spyOn(ttyInternals, 'enableWindowsVirtualTerminalOutput');
+  it('surfaces fallback tty open errors as program panics when WithInputTTY is set', async () => {
+    const openError = new Error('forced open failed');
+    const openSpy = vi.spyOn(ttyInternals, 'openInputTTY').mockImplementation(() => {
+      throw openError;
+    });
 
-    const input = new FakeTtyInput(false);
-    const output = new FakeTtyOutput();
-    const program = NewProgram(null, WithInput(input), WithOutput(output));
-    const runPromise = awaitRun(program);
+    const manualInput = new FakeTtyInput(true);
+    const { program } = createProgram(manualInput, WithInputTTY());
+    const err = await awaitRun(program).then((res) => res.err);
 
-    program.quit();
-    const result = await runPromise;
-    expectGracefulExit(result);
-
-    expect(enableInputSpy).not.toHaveBeenCalled();
-    expect(enableOutputSpy).not.toHaveBeenCalled();
-  });
-
-  it('skips VT enablement when streams are not ttys even on Windows', async () => {
-    mockWindowsPlatform();
-    const enableInputSpy = vi.spyOn(ttyInternals, 'enableWindowsVirtualTerminalInput');
-    const enableOutputSpy = vi.spyOn(ttyInternals, 'enableWindowsVirtualTerminalOutput');
-
-    const program = NewProgram(null, WithInput(new NonTtyInput()), WithOutput(new PassThrough()));
-    const runPromise = awaitRun(program);
-
-    program.quit();
-    const result = await runPromise;
-    expectGracefulExit(result);
-
-    expect(enableInputSpy).not.toHaveBeenCalled();
-    expect(enableOutputSpy).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const panic = expectKilledWithPanic(err);
+    expect(panic.cause).toBe(openError);
+    expect(manualInput.rawModeCalls).toHaveLength(0);
   });
 });

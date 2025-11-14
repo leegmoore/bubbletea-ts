@@ -8,23 +8,10 @@ import type { WriteStream } from 'node:fs';
 import {
   InputReaderCanceledError,
   createCancelableInputReader,
-  enableWindowsVirtualTerminalInput,
-  enableWindowsVirtualTerminalOutput,
-  getWindowsConsoleBinding,
-  WINDOWS_ENABLE_EXTENDED_FLAGS,
-  WINDOWS_ENABLE_MOUSE_INPUT,
-  WINDOWS_ENABLE_WINDOW_INPUT,
   openInputTTY,
   readAnsiInputs
 } from './internal';
-import type {
-  CancelableInputReader,
-  WindowsInputRecord,
-  WindowsKeyInputRecord,
-  WindowsMouseInputRecord,
-  WindowsWindowBufferSizeRecord
-} from './internal';
-import { translateWindowsKeyRecord, translateWindowsMouseRecord } from './internal/windows/input';
+import type { CancelableInputReader } from './internal';
 
 export * from './key';
 export * from './mouse';
@@ -862,9 +849,6 @@ const sanitizeDimension = (value: unknown): number | null => {
   return normalized > 0 ? normalized : null;
 };
 
-const WINDOWS_DEFAULT_COLUMNS = 80;
-const WINDOWS_DEFAULT_ROWS = 24;
-
 type RawModeTty = NodeJS.ReadStream & {
   setRawMode(mode: boolean): NodeJS.ReadStream;
   isRaw?: boolean;
@@ -927,11 +911,6 @@ export class Program {
   private releasedAltScreen = false;
   private releasedBracketedPaste = false;
   private releasedReportFocus = false;
-  private windowsMouseTracking: 'none' | 'cell' | 'all' = 'none';
-  private windowsMouseButtonState = 0;
-  private windowsConsoleInputHandle: number | null = null;
-  private windowsConsoleOriginalMode: number | null = null;
-  private windowsConsolePrepared = false;
 
   constructor(public model: Model | null) {
     this.renderer = new StandardRenderer(() => this.output, () => this.fps);
@@ -1126,8 +1105,13 @@ export class Program {
     }
 
     const assignNewTty = (): void => {
-      const ttyStream = openInputTTY();
-      this.input = ttyStream;
+      try {
+        const ttyStream = openInputTTY();
+        this.input = ttyStream;
+      } catch (error) {
+        this.handlePanic(error);
+        throw error;
+      }
     };
 
     if (this.inputType === InputType.Tty) {
@@ -1148,23 +1132,6 @@ export class Program {
     }
     const ttyInput = toRawModeTty(this.input);
     const ttyOutput = toWritableTty(this.output);
-
-    if (isWindowsPlatform()) {
-      try {
-        let cachedWindowsConsoleMode: number | null = null;
-        if (ttyInput) {
-          cachedWindowsConsoleMode = this.captureWindowsConsoleMode(ttyInput);
-          enableWindowsVirtualTerminalInput(ttyInput);
-          this.prepareWindowsConsoleInput(ttyInput, cachedWindowsConsoleMode);
-        }
-        if (ttyOutput) {
-          enableWindowsVirtualTerminalOutput(ttyOutput);
-        }
-      } catch (error) {
-        this.handlePanic(error);
-        return;
-      }
-    }
 
     if (!ttyInput) {
       return;
@@ -1195,71 +1162,6 @@ export class Program {
     } finally {
       this.rawInputCleanup = undefined;
     }
-  }
-
-  private captureWindowsConsoleMode(ttyInput: RawModeTty | null): number | null {
-    if (!isWindowsPlatform() || !ttyInput) {
-      return null;
-    }
-    const binding = getWindowsConsoleBinding();
-    if (!binding) {
-      return null;
-    }
-    const handle = this.resolveWindowsConsoleHandle(ttyInput);
-    if (handle == null) {
-      return null;
-    }
-    const currentMode = binding.getConsoleMode(handle);
-    this.windowsConsoleInputHandle = handle;
-    if (this.windowsConsoleOriginalMode == null) {
-      this.windowsConsoleOriginalMode = currentMode;
-    }
-    return currentMode;
-  }
-
-  private prepareWindowsConsoleInput(
-    ttyInput: RawModeTty | null,
-    cachedConsoleMode: number | null = null
-  ): void {
-    if (!isWindowsPlatform() || !ttyInput) {
-      return;
-    }
-    const binding = getWindowsConsoleBinding();
-    if (!binding) {
-      return;
-    }
-    const handle = this.resolveWindowsConsoleHandle(ttyInput);
-    if (handle == null) {
-      return;
-    }
-    const currentMode = cachedConsoleMode ?? binding.getConsoleMode(handle);
-    if (this.windowsConsoleOriginalMode == null) {
-      this.windowsConsoleOriginalMode = currentMode;
-    }
-    const startupMouseEnabled =
-      this.startupOptions.has(StartupFlag.MouseCellMotion) ||
-      this.startupOptions.has(StartupFlag.MouseAllMotion);
-    const shouldEnableMouse = startupMouseEnabled || this.windowsMouseTracking !== 'none';
-    let nextMode = currentMode | WINDOWS_ENABLE_WINDOW_INPUT | WINDOWS_ENABLE_EXTENDED_FLAGS;
-    if (shouldEnableMouse) {
-      nextMode |= WINDOWS_ENABLE_MOUSE_INPUT;
-    } else {
-      nextMode &= ~WINDOWS_ENABLE_MOUSE_INPUT;
-    }
-    if (nextMode !== currentMode) {
-      binding.setConsoleMode(handle, nextMode);
-    }
-    this.windowsConsoleInputHandle = handle;
-    this.windowsConsolePrepared = true;
-  }
-
-  private resolveWindowsConsoleHandle(stream: RawModeTty | null): number | null {
-    if (!stream || !stream.isTTY) {
-      return null;
-    }
-    const candidate = stream as RawModeTty & { fd?: number };
-    const fd = candidate.fd;
-    return typeof fd === 'number' ? fd : null;
   }
 
   private setupInput(): void {
@@ -1360,12 +1262,6 @@ export class Program {
       return;
     }
 
-    const windowsCleanup = this.setupWindowsResizeListener();
-    if (windowsCleanup) {
-      this.resizeCleanup = windowsCleanup;
-      return;
-    }
-
     if (!isWritableTty(this.output)) {
       return;
     }
@@ -1392,88 +1288,6 @@ export class Program {
     };
   }
 
-  private setupWindowsResizeListener(): (() => void) | null {
-    if (!isWindowsPlatform()) {
-      return null;
-    }
-
-    let binding: ReturnType<typeof getWindowsConsoleBinding>;
-    try {
-      binding = getWindowsConsoleBinding();
-    } catch (error) {
-      this.handlePanic(error);
-      return null;
-    }
-
-    if (!binding) {
-      return null;
-    }
-
-    if (!isWritableTty(this.output)) {
-      return null;
-    }
-
-    const output = this.output as NodeJS.WriteStream;
-    const columns = sanitizeDimension(output.columns) ?? WINDOWS_DEFAULT_COLUMNS;
-    const rows = sanitizeDimension(output.rows) ?? WINDOWS_DEFAULT_ROWS;
-
-    let disposed = false;
-    let pseudoInput: number | null = null;
-    let pseudoHandle: number | null = null;
-
-    try {
-      const pseudoConsole = binding.createPseudoConsole({ columns, rows });
-      pseudoHandle = pseudoConsole.handle;
-      pseudoInput = pseudoConsole.input;
-    } catch (error) {
-      this.handlePanic(error);
-      return null;
-    }
-
-    if (pseudoInput == null || pseudoHandle == null) {
-      return null;
-    }
-
-    this.windowsMouseButtonState = 0;
-
-    const cleanup = () => {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      try {
-        binding.cancelIo(pseudoInput);
-      } catch {
-        // Ignore cancel errors; we're shutting down regardless.
-      }
-      try {
-        binding.closePseudoConsole(pseudoHandle);
-      } catch {
-        // Ignore cleanup failures for the same reason.
-      }
-    };
-
-    const consumeRecords = async () => {
-      try {
-        for await (const record of binding.readConsoleInput(pseudoInput)) {
-          if (disposed) {
-            break;
-          }
-          this.handleWindowsConsoleRecord(record);
-        }
-      } catch (error) {
-        if (!disposed) {
-          this.handlePanic(error);
-        }
-      }
-    };
-
-    void consumeRecords();
-    this.emitWindowSizeFrom(output);
-
-    return cleanup;
-  }
-
   private emitWindowSizeFrom(stream: NodeJS.WritableStream | null): void {
     if (!this.isRunning() || !isWritableTty(stream)) {
       return;
@@ -1488,60 +1302,6 @@ export class Program {
       width,
       height
     });
-  }
-
-  private handleWindowsConsoleRecord(record: WindowsInputRecord): void {
-    if (!this.isRunning()) {
-      return;
-    }
-    switch (record.type) {
-      case 'window-buffer-size':
-        this.handleWindowsWindowSizeRecord(record);
-        break;
-      case 'key':
-        this.handleWindowsKeyRecord(record);
-        break;
-      case 'mouse':
-        this.handleWindowsMouseRecord(record);
-        break;
-      default:
-        break;
-    }
-  }
-
-  private handleWindowsWindowSizeRecord(record: WindowsWindowBufferSizeRecord): void {
-    const width = sanitizeDimension(record.size.columns);
-    const height = sanitizeDimension(record.size.rows);
-    if (width == null || height == null) {
-      return;
-    }
-    this.enqueueMsg({
-      type: 'bubbletea/window-size',
-      width,
-      height
-    });
-  }
-
-  private handleWindowsKeyRecord(record: WindowsKeyInputRecord): void {
-    const messages = translateWindowsKeyRecord(record);
-    if (messages.length === 0) {
-      return;
-    }
-    for (const msg of messages) {
-      this.enqueueMsg(msg);
-    }
-  }
-
-  private handleWindowsMouseRecord(record: WindowsMouseInputRecord): void {
-    const previousState = this.windowsMouseButtonState;
-    if (!this.isWindowsMouseTrackingEnabled()) {
-      return;
-    }
-    const { msg, nextButtonState } = translateWindowsMouseRecord(record, previousState);
-    this.windowsMouseButtonState = nextButtonState;
-    if (msg) {
-      this.enqueueMsg(msg);
-    }
   }
 
   private cleanupResizeListener(): void {
@@ -1565,11 +1325,9 @@ export class Program {
     if (this.startupOptions.has(StartupFlag.MouseCellMotion)) {
       this.renderer.enableMouseCellMotion();
       this.renderer.enableMouseSGRMode();
-      this.setWindowsMouseTracking('cell');
     } else if (this.startupOptions.has(StartupFlag.MouseAllMotion)) {
       this.renderer.enableMouseAllMotion();
       this.renderer.enableMouseSGRMode();
-      this.setWindowsMouseTracking('all');
     }
 
     if (this.startupOptions.has(StartupFlag.ReportFocus)) {
@@ -1787,12 +1545,10 @@ export class Program {
       case 'bubbletea/enable-mouse-cell-motion':
         this.renderer.enableMouseCellMotion();
         this.renderer.enableMouseSGRMode();
-        this.setWindowsMouseTracking('cell');
         break;
       case 'bubbletea/enable-mouse-all-motion':
         this.renderer.enableMouseAllMotion();
         this.renderer.enableMouseSGRMode();
-        this.setWindowsMouseTracking('all');
         break;
       case 'bubbletea/disable-mouse':
         this.disableMouseModes();
@@ -1824,53 +1580,6 @@ export class Program {
     this.renderer.disableMouseCellMotion();
     this.renderer.disableMouseAllMotion();
     this.renderer.disableMouseSGRMode();
-    this.setWindowsMouseTracking('none');
-  }
-
-  private setWindowsMouseTracking(mode: 'none' | 'cell' | 'all'): void {
-    if (this.windowsMouseTracking === mode) {
-      return;
-    }
-    this.windowsMouseTracking = mode;
-    this.applyWindowsMouseInputFlag();
-  }
-
-  private isWindowsMouseTrackingEnabled(): boolean {
-    return this.windowsMouseTracking !== 'none';
-  }
-
-  private applyWindowsMouseInputFlag(): void {
-    if (!isWindowsPlatform() || !this.windowsConsolePrepared) {
-      return;
-    }
-    const binding = getWindowsConsoleBinding();
-    if (!binding) {
-      return;
-    }
-    const handle = this.windowsConsoleInputHandle;
-    if (handle == null) {
-      return;
-    }
-    let currentMode: number;
-    try {
-      currentMode = binding.getConsoleMode(handle);
-    } catch (error) {
-      this.handlePanic(error);
-      return;
-    }
-    const shouldEnableMouse = this.isWindowsMouseTrackingEnabled();
-    const hasMouse = (currentMode & WINDOWS_ENABLE_MOUSE_INPUT) !== 0;
-    if (shouldEnableMouse === hasMouse) {
-      return;
-    }
-    const nextMode = shouldEnableMouse
-      ? currentMode | WINDOWS_ENABLE_MOUSE_INPUT
-      : currentMode & ~WINDOWS_ENABLE_MOUSE_INPUT;
-    try {
-      binding.setConsoleMode(handle, nextMode);
-    } catch (error) {
-      this.handlePanic(error);
-    }
   }
 
   private stopRenderer(err: Error | null): void {
@@ -1880,10 +1589,10 @@ export class Program {
     } else {
       this.renderer.stop();
     }
-    this.restoreTerminalState(true);
+    this.restoreTerminalState();
   }
 
-  private restoreTerminalState(resetWindowsConsole = false): void {
+  private restoreTerminalState(): void {
     this.renderer.disableBracketedPaste();
     this.renderer.showCursor();
     this.disableMouseModes();
@@ -1896,51 +1605,7 @@ export class Program {
       this.renderer.exitAltScreen();
     }
 
-    this.restoreWindowsConsoleMode(resetWindowsConsole);
     this.restoreRawInput();
-  }
-
-  private resetWindowsConsoleContext(resetState: boolean): void {
-    this.windowsConsolePrepared = false;
-    if (resetState) {
-      this.windowsConsoleInputHandle = null;
-      this.windowsConsoleOriginalMode = null;
-    }
-  }
-
-  private restoreWindowsConsoleMode(resetState: boolean): void {
-    if (!isWindowsPlatform()) {
-      this.resetWindowsConsoleContext(resetState);
-      return;
-    }
-
-    let binding: ReturnType<typeof getWindowsConsoleBinding>;
-    try {
-      binding = getWindowsConsoleBinding();
-    } catch {
-      this.resetWindowsConsoleContext(resetState);
-      return;
-    }
-
-    if (!binding) {
-      this.resetWindowsConsoleContext(resetState);
-      return;
-    }
-
-    const handle = this.windowsConsoleInputHandle;
-    const originalMode = this.windowsConsoleOriginalMode;
-    if (handle == null || originalMode == null) {
-      this.resetWindowsConsoleContext(resetState);
-      return;
-    }
-
-    try {
-      binding.setConsoleMode(handle, originalMode);
-    } catch {
-      // Ignore restore failures; the program is tearing down regardless.
-    } finally {
-      this.resetWindowsConsoleContext(resetState);
-    }
   }
 
   private finish(err: Error | null): void {

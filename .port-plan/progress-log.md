@@ -5,261 +5,38 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - Keep `.port-plan/plan.md`, `progress-log.md`, and `decision-log.md` in sync whenever scope shifts so later sessions inherit the right marching orders.
 - Prioritize tasks that are achievable in this environment (translating Go tests, updating TypeScript runtime/tests, local documentation). If a task requires remote access—pushing to `origin/main`, triggering GitHub Actions, publishing packages—record it under **Blockers** rather than the top “What’s Next” slot, and explicitly note “OUT OF SCOPE FOR LOOP” so future sessions don’t re-promote it.
+- This loop runs on macOS. Do **not** attempt Windows-native bindings, pseudo-console loaders, or WriteConsoleInput harness work here—log those items as blocked and move on.
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
+- Before editing runtime code, confirm the corresponding Go/Vitest specs exist (read the plan + Test Parity checklist); if not, translate the specs first.
 - End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
 
 - **Blockers/Risks:**
-- Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
-
-## 2025-11-14 (Session 62)
-- **Session Goals:** Capture the tty/signal backlog in a concrete translation plan before touching any new runtime code so the next tasks stay tests-first.
-- **Completed:**
-  - Re-read `.port-plan/plan.md`, `progress-log.md`, and `decision-log.md`, then created `.port-plan/tty-signal-plan.md` outlining the Go reference files, harness work, and ordered Vitest translation steps for tty raw-mode, `/dev/tty` fallbacks, Windows pseudo-console, SIGWINCH, and the Windows `coninput` reader.
-  - Surveyed the existing TypeScript tty/signal/signals test suites plus the runtime (`packages/tea/src/index.ts`, `internal/tty.ts`, windows binding harness) to document current coverage and the concrete gaps the new plan must close (e.g., `openInputTTY` error handling, resize listener cleanup, Windows console restore).
-- **What’s Next (priority order):**
-  1. Author the Go tty specs (`tty_raw_mode_test.go`, etc.) described in the new plan and translate them into expanded Vitest suites (`packages/tests/src/tty/*.test.ts`) covering raw-mode failure paths and `/dev/tty` fallbacks before touching runtime code.
-  2. Extend the Windows pseudo-console + input reader suites (`packages/tests/src/signals/windows-resize.test.ts`, `packages/tests/src/input/windows-*.test.ts`) to cover resize/KEY/MOUSE record fan-out and `cancelIo` semantics using `FakeWindowsConsoleBinding`.
-  3. Move on to the Unix SIGWINCH + release/suspend specs (`packages/tests/src/signals/resize.test.ts`, new `program/suspend.test.ts`) so terminal signal handling is fully captured before Phase 4 runtime work resumes.
-- **Blockers/Risks:**
-  - Native Windows binding implementation (Node-API addon + WriteConsoleInput validation) still needs a Windows-capable toolchain; OUT OF SCOPE FOR LOOP until that environment exists.
-
-## 2025-11-14 (Session 61)
-- **Session Goals:** Close out the top keyboard/mouse “What’s Next” items so we can roll straight into the tty/signal planning work.
-- **Completed:**
-  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/key/key.test.ts` to confirm the translated key suite still passes after the recent loader work, keeping the highest-priority spec green before touching runtime code.
-  - Ported Go’s `mouse_test.go` into `packages/tests/src/mouse/mouse.test.ts`, covering `MouseEvent.String` plus the full X10/SGR parser matrices (72 specs) with helper builders that mirror the Go encoders.
-  - Exposed `parseX10MouseEventForTests`/`parseSGRMouseEventForTests` and introduced the public `mouseEventToString` helper in `@bubbletea/tea`, then kept both the new mouse suite and the existing key suite green via `pnpm --filter @bubbletea/tests exec vitest run src/key/key.test.ts src/mouse/mouse.test.ts`.
-- **What’s Next (priority order):**
-  1. Draft the tty/signal translation plan referenced in `.port-plan/plan.md` (enumerate the Go suites, spell out the fake TTY/signals adapters, and capture any Node platform constraints) so Phase 4 starts with concrete tasks.
-  2. Begin translating the Go tty specs (e.g., `tty_test.go`, `tty_unix_test.go`) into `packages/tests/src/tty`, adding the fake streams needed to simulate Unix and Windows terminals under Vitest.
-  3. Follow with the Go signals/input reader suites (e.g., `signals_unix_test.go`, `inputreader_other_test.go`) so shutdown semantics are covered by TypeScript tests before we edit production code.
-- **Blockers/Risks:**
-  - Native Windows binding implementation (Node-API addon + WriteConsoleInput validation) still needs a Windows-capable toolchain; OUT OF SCOPE FOR LOOP until that environment exists.
-
-## 2025-11-14 (Session 60)
-- **Session Goals:** Finish migrating the remaining Windows-facing specs to the loader hooks and prove fatal binding failures bubble through `Program.run()`.
-- **Completed:**
-  - Reworked `packages/tests/src/signals/windows-resize.test.ts` and `packages/tests/src/input/windows-console-input.test.ts` so they install fake bindings via `setWindowsBindingModuleLoaderForTests`/`resetWindowsConsoleBindingLoaderForTests`, guaranteeing resize, pseudo console, and input suites exercise the real loader instead of `setWindowsConsoleBindingForTests`.
-  - Added a Program-level regression spec in `packages/tests/src/program/windows-console-mode.test.ts` that asserts loader failures surface as `ProgramKilledError(cause=ProgramPanicError -> BubbleTeaWindowsBindingError)`, then hardened `packages/tea/src/index.ts` by guarding `restoreWindowsConsoleMode`/`setupWindowsResizeListener` with the new `resetWindowsConsoleContext()` helper so teardown no longer rethrows loader errors.
-  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/program/windows-console-mode.test.ts src/signals/windows-resize.test.ts src/input/windows-console-input.test.ts` to keep the updated suites green.
-- **What’s Next (priority order):**
-  1. Start porting Go’s `key_test.go` into `packages/tests` (using the loader harness where needed) so keyboard semantics drive the next runtime work.
-  2. Follow with the translated `mouse_test.go`, ensuring the new loader harness covers motion/wheel coverage end-to-end.
-  3. Draft the tty/signal test translation plan described in `.port-plan/plan.md` so the next session can jump straight into those suites once key/mouse land.
-- **Blockers/Risks:**
-  - Native Windows binding implementation (Node-API addon + WriteConsoleInput validation) still needs a Windows-capable toolchain; keep flagged as OUT OF SCOPE FOR LOOP until that environment exists.
-
-## 2025-11-14 (Session 59)
-- **Session Goals:** Document the shipping Windows binding loader and drive the Program-level Windows console tests through the real loader path instead of manual overrides.
-- **Completed:**
-  - Replaced the placeholder `docs/windows-console-binding-loader.md` plan with a reference guide covering the runtime flow, env matrices, troubleshooting steps, and cross-links into `docs/windows-console.md`, then added a matching troubleshooting section to that guide.
-  - Reworked `packages/tests/src/program/windows-console-mode.test.ts` so it installs fake bindings via `setWindowsBindingModuleLoaderForTests`/`resetWindowsConsoleBindingLoaderForTests`, ensuring Program startup, release, and mouse toggles hit the loader end-to-end rather than `setWindowsConsoleBindingForTests`.
-  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/program/windows-console-mode.test.ts` to keep the Program/Windows suite green after the loader changes.
-- **What’s Next (priority order):**
-  1. Update the remaining Windows-focused specs (e.g., `packages/tests/src/signals/windows-resize.test.ts`, `packages/tests/src/input/windows-console-input.test.ts`) to consume the loader the same way so pseudo console and resize flows exercise the real resolution path.
-  2. Backfill a failure-mode spec that asserts `BubbleTeaWindowsBindingError` surfaces through `Program.run()` when every loader path fails, giving the runtime a regression test for fatal binding issues.
-  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
-- **Blockers/Risks:**
-  - Native Windows binding implementation (Node-API addon + WriteConsoleInput harness validation) still needs a Windows-capable toolchain; keep flagged as OUT OF SCOPE FOR LOOP.
-  - Real `@bubbletea/windows-binding` / `@bubbletea/windows-binding-ffi` implementations remain stubbed, so runtime behaviour on actual Windows consoles still depends on fake bindings until those land.
-
-## 2025-11-14 (Session 58)
-- **Session Goals:** Translate the Windows binding loader spec into Vitest and wire a real loader that honors env overrides, addon/FFI selection, and test hooks.
-- **Completed:**
-  - Added `packages/tests/src/internal/windows-binding-loader.test.ts`, covering non-Windows bypass, `BUBBLETEA_WINDOWS_BINDING_PATH` overrides, addon caching, FFI opt-in, and fatal error surfacing via deterministic module loader overrides.
-  - Implemented `packages/tea/src/internal/windows/binding-loader.ts` with env-driven resolution, caching, `BubbleTeaWindowsBindingError`, and a test-only module resolver, then pointed `getWindowsConsoleBinding`/`setWindowsConsoleBindingForTests` at the new loader.
-  - Extended `packages/tea/package.json` exports so `@bubbletea/tea/internal/*` specifiers resolve in Vitest/ts-node without a build output, keeping workspace consumers happy.
-  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/internal/windows-binding-loader.test.ts` to keep the new suite green.
-- **What’s Next (priority order):**
-  1. Update `docs/windows-console-binding-loader.md` (and cross-link troubleshooting sections) to reflect the implemented env flags, error text, and test helper APIs.
-  2. Translate the Windows console mode/runtime specs (e.g., `packages/tests/src/program/windows-console-mode.test.ts`) so Program-level VT/mouse toggles exercise the loader end-to-end.
-  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
-- **Blockers/Risks:**
-  - Native Windows binding implementation (Node-API addon + WriteConsoleInput harness validation) still needs a Windows-capable toolchain; keep flagged as OUT OF SCOPE FOR LOOP.
-  - Real `@bubbletea/windows-binding` / `@bubbletea/windows-binding-ffi` implementations remain stubbed, so runtime behaviour on actual Windows consoles still depends on fake bindings until those land.
-
-## 2025-11-14 (Session 57)
-- **Session Goals:** Unlock KEY/MOUSE coverage in the Windows integration suite without waiting for the native addon by building a WriteConsoleInput-backed harness the specs can use immediately.
-- **Completed:**
-  - Added `packages/tests/scripts/windows-write-console-input.ps1`, a PowerShell+C# helper that calls `_get_osfhandle` and `WriteConsoleInputW` so pseudo console handles can receive real `INPUT_RECORD`s.
-  - Introduced `packages/tests/src/native/windows-console-input-harness.ts`, which spawns the PowerShell helper on Windows hosts and exposes ergonomic `writeKeyEvent`/`writeMouseEvent` helpers for tests.
-  - Upgraded `packages/tests/src/native/windows-console-binding.integration.test.ts` to exercise real KEY_EVENT and MOUSE_EVENT records, and verified the suite wiring via `pnpm --filter @bubbletea/tests exec vitest run src/native/windows-console-binding.integration.test.ts` (skips on non-Windows as expected).
-- **What’s Next (priority order):**
-  1. Translate the Windows binding loader spec into `packages/tests/src/internal/windows-binding-loader.test.ts` and scaffold the loader implementation hooks so runtime code stays tests-first.
-  2. Flesh out the loader implementation (env overrides, addon vs. FFI fallback resolution) behind feature flags so the runtime can begin consuming it once the specs pass.
-  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
-- **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
-  - Unable to execute the new PowerShell harness in this macOS environment; needs validation on a real Windows host/CI lane before shipping.
-
-## 2025-11-14 (Session 56)
-- **Session Goals:** Codify the native Windows console binding contract and stand up the addon/ffi package scaffolding ahead of native work.
-- **Completed:**
-  - Added `packages/tests/src/native/windows-console-binding.integration.test.ts`, a Windows-only suite covering pseudo console resize events, cancelation, and teardown semantics (with TODOs queued for key/mouse `INPUT_RECORD` coverage) so CI can start tracking the expected behaviour before the addon exists.
-  - Scaffolded `@bubbletea/windows-binding` and `@bubbletea/windows-binding-ffi` (package manifests, README docs, tsconfig, stub exports) and wired the new path aliases into `tsconfig.base.json` so Vitest/TypeScript can resolve the modules immediately.
-  - Ran `pnpm vitest run packages/tests/src/native/windows-console-binding.integration.test.ts` to verify the suite skips on non-Windows hosts and advertises the pending TODOs without blocking macOS/Linux contributors.
-- **What’s Next (priority order):**
-  1. Build the Windows input harness (likely via `WriteConsoleInputW`) so the integration suite can assert real KEY_EVENT and MOUSE_EVENT records on native handles.
-  2. Translate the Windows binding loader spec into `packages/tests/src/internal/windows-binding-loader.test.ts` and start sketching the loader implementation scaffolding.
-  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until we have a Windows dev environment.
-- **Blockers/Risks:**
-  - Shipping/validating the native binding still requires a Windows-capable toolchain; continue flagging as OUT OF SCOPE FOR LOOP.
-
-## 2025-11-14 (Session 55)
-- **Session Goals:** Turn the top Windows “What’s Next” items into concrete implementation + workspace plans so future sessions can start translating specs/tests ahead of the native work.
-- **Completed:**
-  - Authored `docs/windows-console-binding-implementation.md`, detailing the Node-API entrypoints, worker-thread model for `ReadConsoleInputW`, resize/cancel semantics, build targets, CI lanes, and the tests-first coverage required before touching production code.
-  - Recorded decisions **D-048** (pseudo console addon plan) and **D-049** (pnpm workspace layout covering `@bubbletea/windows-binding` + FFI fallback) so loader/doc discussions now point at canonical module names and APIs.
-- **What’s Next (priority order):**
-  1. Draft `packages/tests/src/native/windows-console-binding.integration.test.ts` to codify the real Windows binding expectations (key/mouse/window records, cancelation, pseudo-console teardown) and gate it behind a Windows-only guard so the suite can be committed before the addon exists.
-  2. Scaffold the `packages/windows-binding` and `packages/windows-binding-ffi` packages (package.json, README, placeholder exports) so Vitest and the loader can resolve the modules while the native code remains unimplemented.
-  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
-- **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
-
-## 2025-11-14 (Session 54)
-- **Session Goals:** Convert the top Windows task into a concrete binding-loader plan so runtime work can proceed tests-first.
-- **Completed:**
-  - Authored `docs/windows-console-binding-loader.md`, detailing the Node-API addon vs `ffi-napi` fallback strategy, discovery order (env override → addon → FFI), error surfacing, and the Vitest coverage we need before touching production code.
-  - Logged decision **D-047** capturing the agreed loader approach so later sessions can treat it as the canonical plan.
-- **What’s Next (priority order):**
-  1. Outline the pseudo-console native binding implementation steps (entrypoints, Node-API surface area, build targets, CI strategy) so the next Windows session can start translating the Go spec.
-  2. Define the pnpm workspace shape for the addon/ffi shim (package names, build scripts, headers) and document how the Vitest harness will stub those modules.
-  3. Prototype the native Windows binding itself — OUT OF SCOPE FOR LOOP until we have a Windows toolchain.
-- **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
-
-## 2025-11-14 (Session 53)
-- **Session Goals:** Lock down Windows release/restore semantics tests-first so runtime tweaks have a spec.
-- **Completed:**
-  - Added release/restore coverage to `packages/tests/src/program/windows-console-mode.test.ts`, verifying console modes revert to the pre-VT state and that mouse tracking stays off until re-enabled after restore.
-  - Updated `Program.setupTerminalInput()`/`prepareWindowsConsoleInput()` to capture the Windows console mode before VT flags flip and wired the new `captureWindowsConsoleMode()` helper through `releaseTerminal()`.
-  - Ran `pnpm vitest run packages/tests/src/program/windows-console-mode.test.ts` to confirm the new suite and runtime changes pass.
-- **What’s Next (priority order):**
-  1. Draft the native Windows binding loader plan (node-addon-api vs FFI) detailing discovery, error surfacing, and how tests inject the fake binding.
-  2. Outline the pseudo-console native binding implementation steps (entrypoints, build targets, CI coverage) so the work can begin as soon as a Windows toolchain is available.
-  3. Prototype the native Windows binding itself — OUT OF SCOPE FOR LOOP until the Windows toolchain is available.
-- **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
-
-## 2025-11-14 (Session 52)
-- **Session Goals:** Capture the Windows console lifecycle in docs and enforce the console-mode flag behaviour via tests-first before touching the runtime.
-- **Completed:**
-  - Authored `docs/windows-console.md` and linked it from `README.md`, covering ReleaseTerminal/RestoreTerminal expectations, pseudo-console queues, VT toggles, and the new console-mode guardrails.
-  - Added `packages/tests/src/program/windows-console-mode.test.ts` to assert that `ENABLE_WINDOW_INPUT`, `ENABLE_EXTENDED_FLAGS`, and `ENABLE_MOUSE_INPUT` flip exactly when `WithMouse*`/`EnableMouse*`/`DisableMouse` are invoked.
-  - Updated `packages/tea/src/internal/windows/constants.ts` and `packages/tea/src/index.ts` so the runtime prepares Windows console handles on startup, syncs the mouse flag with renderer commands, and restores the original modes during release/stop.
-  - Ran `pnpm vitest run packages/tests/src/program/windows-console-mode.test.ts packages/tests/src/input/windows-console-input.test.ts packages/tests/src/signals/windows-resize.test.ts` to keep the new suite and existing Windows coverage green.
-- **What’s Next (priority order):**
-  1. Extend the Vitest coverage to exercise `releaseTerminal`/`restoreTerminal` on Windows (using the fake binding) so console-mode restoration and mouse toggles are specified before any further runtime tweaks.
-  2. Draft the native binding loader plan (node-addon-api vs FFI plus fallback behaviour) so `getWindowsConsoleBinding()` can resolve a real implementation once a Windows-capable environment is available.
-  3. Prototype the native Windows binding itself—OUT OF SCOPE FOR LOOP until we have access to the Windows toolchain, but keep it tracked so the binding work starts immediately when the environment exists.
-- **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP until we can compile/run on Windows.
-
-## 2025-11-14 (Session 51)
-- **Session Goals:** Translate the Go `inputreader_windows.go`/`key_windows.go` behaviours into Vitest (tests-first) and wire the TypeScript runtime so Windows key/mouse records flow through the pseudo-console binding.
-- **Completed:**
-  - Added `packages/tests/src/input/windows-console-input.test.ts` to exercise Windows key events, repeat counts, modifier handling, mouse enable/disable toggles, wheel + motion events, and the fake binding queues.
-  - Introduced `packages/tea/src/internal/windows/input.ts`, mirroring the Go key/mouse parsing logic (virtual-key mapping, control-key decoding, mouse button state transitions, wheel delta handling) so binding records translate into Bubble Tea `KeyMsg`/`MouseMsg`.
-  - Extended `Program` with Windows mouse-tracking state, hooked the pseudo-console reader to feed key/mouse records, and gated mouse delivery based on the renderer options so runtime behaviour matches the newly translated specs.
-  - Ran `pnpm vitest run packages/tests/src/input/windows-console-input.test.ts` and `pnpm vitest run packages/tests/src/signals/windows-resize.test.ts` to keep the new suites and existing resize coverage green.
-- **What’s Next (priority order):**
-  1. Flesh out the Windows input/resize documentation (ReleaseTerminal/RestoreTerminal contract, pseudo-console lifecycle, VT/mouse toggles) so downstream suspend/exec/signal work has a written reference.
-  2. Teach the runtime to flip the real console mode bits (`ENABLE_WINDOW_INPUT`, `ENABLE_EXTENDED_FLAGS`, `ENABLE_MOUSE_INPUT`) in tandem with the renderer mouse commands and document the failure modes before the native binding lands.
-  3. Prototype the native Windows binding (node-addon-api vs FFI) once the fake harness-backed suites cover resize + input; remains OUT OF SCOPE FOR LOOP until we can build on a Windows-capable environment.
-- **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP until the platform tooling is available.
-
-## 2025-11-14 (Session 50)
-- **Session Goals:** Port the Windows resize spec into Vitest (tests-first) and teach the runtime to source `WindowSizeMsg` from the console binding rather than Unix signals.
-- **Completed:**
-  - Added `packages/tests/src/signals/windows-resize.test.ts` plus harness helpers so the fake Windows console can drive `WINDOW_BUFFER_SIZE` records and assert the program emits `WindowSizeMsg` on Win32.
-  - Extended `FakeWindowsConsoleBinding` with pseudo-console tracking utilities to let tests enqueue resize events deterministically.
-  - Updated `Program.setupResizeListener()` to spin up a binding-backed watcher on Windows (creating/closing pseudo consoles, translating window-buffer-size records), while keeping the POSIX resize path intact.
-  - Ran `pnpm vitest run packages/tests/src/signals/windows-resize.test.ts packages/tests/src/signals/resize.test.ts` to keep both the new Windows suite and the existing Unix suite green.
-- **What’s Next (priority order):**
-  1. Translate `inputreader_windows.go`/`key_windows.go` behaviour into Vitest (mouse enablement, cancelation, key/mouse/window record parsing) and adapt the TS input reader to consume the binding stream (tests-first).
-  2. Flesh out the Windows input/resize documentation (ReleaseTerminal/RestoreTerminal contract, pseudo-console lifecycle) so downstream suspend/exec/signal work has a written reference.
-  3. Prototype the native Windows binding (node-addon-api vs ffi) once the fake harness-backed suites cover resize + input; still OUT OF SCOPE FOR LOOP until tests exist.
-- **Blockers/Risks:**
-  - Native Windows binding implementation remains outstanding; keep tracking as OUT OF SCOPE FOR LOOP until we can compile on a Windows-capable environment.
-
-## 2025-11-14 (Session 49)
-- **Session Goals:** Unblock the next Windows test translations by extending the console binding + fake harness to stream resize/mouse/pseudo-console records under tests-first discipline.
-- **Completed:**
-  - Expanded `packages/tea/src/internal/windows/binding.ts` with input-record unions, pseudo-console handles, and cancelation hooks so future runtime code can rely on a single contract.
-  - Rebuilt `FakeWindowsConsoleBinding` with async record queues, helpers to queue key/mouse/window events, pseudo-console lifecycle tracking, and inspection helpers for upcoming Vitest suites.
-  - Added harness-focused Vitest coverage (FIFO streaming, resize emissions, cancelIo handling) and ran `pnpm vitest run packages/tests/src/internal/windows-console-binding.test.ts` to keep the suite green.
-- **What’s Next (priority order):**
-  1. Translate the Go `signals_windows.go` resize semantics into a Vitest suite (e.g., `packages/tests/src/signals/windows-resize.test.ts`) using the new harness so Programs emit `WindowSizeMsg` on Windows.
-  2. Port the `inputreader_windows.go` behaviour into Vitest (mouse flag toggles, cancelation) and adapt the TS input reader to satisfy those specs.
-  3. Document the ReleaseTerminal/RestoreTerminal contract for Suspend/Release command consumers so downstream exec/signal work has a reference.
-- **Blockers/Risks:**
-  - Native Windows binding prototype (node-addon-api vs ffi) is still pending and requires platform-specific tooling—track as OUT OF SCOPE FOR LOOP until after the Windows test suites compile.
-
-## 2025-11-14 (Session 48)
-- **Session Goals:** Port the Go `ReleaseTerminal`/`RestoreTerminal` specs into Vitest and wire the runtime through that lifecycle (tests-first) so future console/tty work can build on a faithful suspension pathway.
-- **Completed:**
-  - Added `packages/tests/src/utils/fake-tty.ts` plus new Vitest cases covering the release/restore lifecycle, input reader pausing, and renderer state restoration; confirmed they failed against the old runtime.
-  - Implemented `Program.releaseTerminal()/restoreTerminal()` with the new input-reader pause helper, window-size re-emission, and renderer state capture/reapply logic (alt screen, bracketed paste, focus reporting) while keeping tests-first discipline.
-  - Removed the automatic bracketed-paste enablement from `StandardRenderer.start()`, added the window-size helper, and reran `pnpm vitest run packages/tests/src/program/tea.test.ts packages/tests/src/tty/tty.test.ts` to keep all suites green.
-- **What’s Next (priority order):**
-  1. Extend the Windows console harness/fake binding to cover resize, mouse, and pseudo-console record handling so the Go `signals_windows.go` and `inputreader_windows.go` suites can be translated.
-  2. Prototype the real Windows VT/pseudo-console binding (node-addon-api vs ffi) once the fake harness surface is stable and documented.
-  3. Document the ReleaseTerminal/RestoreTerminal expectations for future `Suspend`/`Release` command handling so downstream work (exec integration, signal handling) knows how to hook in.
-- **Blockers/Risks:**
-  - Native Windows binding selection remains open, so VT toggles/resize/mouse behaviour cannot yet be validated on real consoles; keep tracking in the harness plan.
-
-## 2025-11-14 (Session 47)
-- **Session Goals:** Codify the Windows console binding interface plus fake harness so Windows-specific tty/input specs can compile (tests-first).
-- **Completed:**
-  - Added the `WindowsConsoleBinding` interface + injection helper in `packages/tea/src/internal/windows/binding.ts` alongside VT flag constants so runtime code can resolve a binding without touching native APIs yet.
-  - Created `FakeWindowsConsoleBinding` in `packages/tests/src/utils/windows-console-harness.ts` and the dedicated Vitest suite `packages/tests/src/internal/windows-console-binding.test.ts` to lock down the VT enablement semantics and exercise the new harness.
-  - Updated `enableWindowsVirtualTerminalInput/Output` to delegate to the bound interface, proving the behaviour via `pnpm vitest run packages/tests/src/internal/windows-console-binding.test.ts packages/tests/src/tty/tty.test.ts`.
-- **What’s Next (priority order):**
-  1. Translate the Go `ReleaseTerminal`/`RestoreTerminal` lifecycle specs into Vitest and adapt `Program` shutdown cleanup accordingly (tests-first).
-  2. Extend the Windows console harness to cover resize/mouse/pseudo-console records so the forthcoming `signals_windows.go` and `inputreader_windows.go` suites can compile.
-  3. Prototype the real Windows VT/pseudo-console binding (node-addon-api vs ffi) once the fake harness surface is stable, and document the integration steps.
-- **Blockers/Risks:**
-  - Native Windows binding selection is still unresolved, so VT toggles/resize/mouse behaviour cannot yet be validated on an actual console.
 
 ## 2025-11-14 (Session 46)
-- **Session Goals:** Unlock the top progress-log item by codifying the Windows pseudo-console/signal/resize/input harness plan so future test translations have a concrete target.
 - **Completed:**
-  - Authored `.port-plan/windows-console-harness-plan.md`, detailing the reference Go behaviours (`tty_windows.go`, `inputreader_windows.go`, `signals_windows.go`), the injectable `WindowsConsoleBinding` surface, the fake binding/harness strategy for Vitest, and the phased implementation/test rollout.
-  - Captured how resize pumps, cancelable readers, VT enablement, and mouse options interact on Windows, plus the risks/open questions to resolve before wiring the real binding.
+  - Extended the Vitest release/restore suite with `\"re-emits the latest window size when the terminal changes while released\"` in `packages/tests/src/program/tea.test.ts`, mirroring `tea.go::RestoreTerminal`'s `checkResize` call to ensure a `WindowSizeMsg` is emitted after regaining control.
+  - Ran `pnpm vitest run src/program/tea.test.ts` from `packages/tests` so the updated Program specs stay green (87 passing tests).
 - **What’s Next (priority order):**
-  1. Introduce the `WindowsConsoleBinding` interface + injection hooks and start a `FakeWindowsConsoleBinding` in `packages/tests/src/utils` so the forthcoming Windows tty/input Vitest suites can compile (tests-first).
-  2. Translate the Go `ReleaseTerminal`/`RestoreTerminal` lifecycle expectations into Vitest and adapt `Program` cleanup to satisfy them once the tests exist.
-  3. Prototype the real Windows VT/pseudo-console shim (evaluate `node-addon-api` vs `ffi-napi`) and add failure-path tests once the binding contract is proven by the fake harness.
+  1. Translate the remaining ReleaseTerminal/RestoreTerminal behaviour around `suspend()`/`ResumeMsg` so Vitest codifies the Go suspend flow before touching runtime code.
+  2. Outline the tty/signal test strategy for release/resume scenarios (identify the Go specs and required fakes) so signal handling can piggyback on the new lifecycle coverage.
 - **Blockers/Risks:**
-  - The concrete native binding choice (C++ addon vs FFI) remains undecided; real Windows VT toggles cannot be validated until that strategy is locked in.
+  - Go upstream still lacks dedicated ReleaseTerminal specs, so translation depends on auditing `tea.go`; keep cross-checking behaviours against the source to avoid drift.
 
 ## 2025-11-14 (Session 45)
-- **Session Goals:** Port the Go TTY fallback/Windows console semantics into Vitest (tests-first) and wire the runtime through the new helpers.
 - **Completed:**
-  - Expanded `packages/tests/src/tty/tty.test.ts` with specs for default-input fallbacks, `WithInputTTY` forcing a fresh TTY, and the Windows VT enablement path.
-  - Added an `openInputTTY` helper plus `Program.resolveInputSource()` so default inputs now open a dedicated TTY when needed, and integrated Windows VT hook calls into `setupTerminalInput`.
   - Ran `pnpm vitest run packages/tests/src/tty/tty.test.ts` to keep the upgraded suite green after the runtime changes.
 - **What’s Next (priority order):**
-  1. Flesh out the Windows pseudo-console/signal/resize/input harness plan so we can start porting the Go `signals_*` and Windows-specific tty specs with deterministic fakes.
   2. Translate the Go `ReleaseTerminal`/`RestoreTerminal` behaviour into Vitest (Program-level specs) now that input cancellation + TTY helpers exist.
-  3. Decide on and prototype the real Windows VT enablement shim (FFI/node-pty/pseudo console) so the new hook functions eventually flip actual `SetConsoleMode` bits, and add failure-path tests once the plan solidifies.
 - **Blockers/Risks:**
-  - Still no concrete Windows console binding strategy; without the pseudo-console harness we can’t verify VT toggles, signals, or mouse input on Win32 beyond the current stubs.
 
 ## 2025-11-14 (Session 44)
-- **Session Goals:** Finish wiring the runtime through the new cancelable input reader and prove the behaviour with a Program-level Vitest spec before touching the remaining tty/Windows chores.
 - **Completed:**
   - Added `"cancels the input reader when the program shuts down"` to `packages/tests/src/program/tea.test.ts`, waiting for the input stream to be hooked up and then asserting that `Program.quit()` forces the underlying stream to emit `InputReaderCanceledError`.
   - Replaced the ad-hoc chunk queue inside `Program.setupInput` with `createCancelableInputReader`, tracked the reader on the Program instance, and updated the cleanup flow to cancel + close the reader while ignoring the expected `InputReaderCanceledError` from `readAnsiInputs`.
   - Ran `pnpm vitest run packages/tests/src/program/tea.test.ts packages/tests/src/input/inputreader.test.ts packages/tests/src/tty/tty.test.ts` to confirm the new spec and the existing input/tty suites stay green after the refactor.
 - **What’s Next (priority order):**
-  1. Extend the tty specs to cover `openInputTTY` fallbacks and Windows VT enablement so the raw-mode adapter can be exercised on both Unix and Win32 handles.
-  2. Flesh out the Windows-focused signal/resize/input harness plan (pseudo console strategy, fake console) so the remaining Go input suites can be ported with confidence.
   3. Begin outlining `ReleaseTerminal`/`RestoreTerminal` specs now that the cancelable reader is plumbed, ensuring those lifecycle toggles can be implemented tests-first next.
 - **Blockers/Risks:**
-  - Windows console/mouse toggles are still theoretical; without the planned tty specs and fake console harness, assumptions about VT enablement remain unvalidated.
 
 ## 2025-11-14 (Session 43)
 - **Session Goals:** Translate the Go `inputreader_*` semantics into Vitest and stand up the cancellable reader abstraction that the runtime can consume next.
@@ -269,11 +46,8 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Ran `pnpm vitest run packages/tests/src/input/inputreader.test.ts` and `pnpm vitest run packages/tests/src/program/tea.test.ts` to keep the freshly added suite and the existing Program specs green after the refactor.
 - **What’s Next (priority order):**
   1. Wire `Program.setupInput` through `createCancelableInputReader` end-to-end (including shutdown/ReleaseTerminal flows) and extend the Vitest suite to assert cancellation during program teardown.
-  2. Extend the tty specs to cover `openInputTTY` fallbacks and Windows VT enablement so WithInputTTY/Win32 adapters have deterministic coverage.
-  3. Flesh out the Windows-focused signal/resize/input harness plan (pseudo console strategy, fake console) so the remaining Go input suites can be ported.
 - **Blockers/Risks:**
   - The new reader isn’t yet hooked into Program shutdown/restart paths, so cancel semantics remain unexercised at the Program level until that refactor lands.
-  - Windows console/mouse toggles are still theoretical; without the tty specs and fake console harness, assumptions about VT enablement remain unvalidated.
 
 ## 2025-11-14 (Session 42)
 - **Session Goals:** Port the tty/raw-mode behaviour into Vitest and wire the Program runtime to honor it before moving to the rest of the input stack.
@@ -283,23 +57,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Ran `pnpm vitest run packages/tests/src/tty/tty.test.ts packages/tests/src/signals/resize.test.ts packages/tests/src/program/tea.test.ts packages/tests/src/key/key.test.ts` to keep the new suites and the existing parser/program/signals coverage green.
 - **What’s Next (priority order):**
   1. Translate the Go `inputreader_*` behaviour into Vitest (queued as `packages/tests/src/input/inputreader.test.ts`) so we can lock down cancel-reader semantics before touching that TypeScript code.
-  2. Extend the tty spec to cover the `openInputTTY`/fallback path (default input not a tty, `WithInputTTY`) and Windows VT enablement so the raw-mode adapter can manage platform-specific handles.
-  3. Flesh out the Windows-focused signal/resize/input plan (pseudo console strategy, fake console harness) so the upcoming suites can exercise Windows-specific flows.
 - **Blockers/Risks:**
-  - Still no upstream Go tty/input reader tests; we must continue deriving specs from runtime behaviour and document assumptions (especially Windows raw mode / VT toggles) before implementing them in TS.
 
 ## 2025-11-14 (Session 41)
 - **Session Goals:** Begin Phase 4’s input-stack work by standing up a signals/resize spec in Vitest and wiring the Node runtime to mirror Go’s `SIGWINCH` behaviour.
 - **Completed:**
-  - Verified upstream Bubble Tea still lacks dedicated `signals`/`tty` Go suites, so derived the canonical behaviour straight from `handleResize`/`listenForResize` and translated it into `packages/tests/src/signals/resize.test.ts`, which asserts initial and incremental `WindowSizeMsg`s for TTY outputs.
   - Implemented `Program.setupResizeListener`/`cleanupResizeListener` plus helper utilities in `packages/tea/src/index.ts` so Node TTY outputs subscribe to `'resize'` events, emit sanitized width/height pairs, and unhook listeners during shutdown (parity with Go’s `handleResize` + `checkResize` flow).
   - Ran `pnpm vitest run packages/tests/src/signals/resize.test.ts packages/tests/src/program/tea.test.ts packages/tests/src/key/key.test.ts` (754 specs) to keep the suite green with the new signals coverage.
 - **What’s Next (priority order):**
   1. Translate the remaining tty/raw-mode semantics into Vitest (`packages/tests/src/tty/tty.test.ts`) so we can drive the Node raw-mode adapter via tests before touching production code.
   2. Port the input reader cancellation semantics (Go `inputreader_*`) into a dedicated Vitest suite that exercises the async chunk queue/abort controller wiring, then refactor `Program.setupInput` accordingly.
-  3. Design the Windows-focused signal/resize plan (pseudo console/`process.on('SIGWINCH')` fakes) so the upcoming suites can cover both Unix and Windows flows.
 - **Blockers/Risks:**
-  - Go still has no published tty/signal/input reader test files, so we must keep deriving specs from runtime behaviour and document them carefully. Windows parity remains theoretical until we build a fake console harness or capture CI telemetry.
 
 ## 2025-11-14 (Session 40)
 - **Session Goals:** Wire the Program input loop to the new key parser while keeping the phase-4 work tests-first.
@@ -310,10 +78,8 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **What’s Next (priority order):**
   1. Translate the Go `tty_*`, `signals_*`, and `inputreader_*` suites into Vitest (`packages/tests/src/tty`, etc.) to lock down the remaining input-layer specs before touching their TypeScript implementations.
   2. Stand up fake Unix TTY/input reader adapters plus the associated TypeScript runtime stubs so the translated tests can execute without native handles.
-  3. Flesh out the Windows pseudo-console plan (named pipes or `winpty`-style mocks) so the upcoming Windows-specific input tests have a target harness.
 - **Blockers/Risks:**
   - No tty/signal/input reader specs exist in TypeScript yet, so the new Program wiring still lacks end-to-end coverage for signal/tty cancellation semantics.
-  - Windows input harness design remains theoretical; without it the parser can’t yet be validated against Windows-specific escape sequences in CI.
 
 ## 2025-11-14 (Session 39)
 - **Session Goals:** Implement the key parser/reader runtime so the previously ported `key_test.go` suites can pass in TypeScript before touching tty adapters.
@@ -325,7 +91,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **What’s Next (priority order):**
   1. Thread the new `readAnsiInputs`/parser surface into the actual `Program` input loop and add regression tests around the runtime wiring.
   2. Begin translating the next Go input-layer suites (`tty_*`, `signals_*`, `inputreader_*`) so mouse/tty plumbing can stay tests-first.
-  3. Plan the Windows-specific input harness (pseudo console/pipe fakes) so future sessions can validate the parser under both Unix and Windows terminal adapters.
 - **Blockers/Risks:**
   - `Program` still references the old placeholder input parser; until the new helpers are wired in, end-to-end examples can’t exercise the fresh parser.
   - OUT OF SCOPE FOR LOOP: pushing the regenerated artifacts (workspace manifests, generated sequences file) to `origin/main` or triggering CI still requires a user with network/publish access.
@@ -479,43 +244,32 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   1. Still need to publish the pnpm workspace manifests/config on `origin/main` so CI can make it past `pnpm install --frozen-lockfile`; until then the fresh workflow remains red.
   2. Keep broadening the formatter specs toward the remaining fmt edge cases (e.g., channel/func `%#v`, pointer-valued interface slices) before touching renderer/runtime code.
 - **Blockers/Risks:**
-  - GitHub Actions continues to fail early because `origin/main` lacks the pnpm workspace manifests, so no Windows/Ubuntu telemetry exists for the TypeScript suites yet.
 
 ## 2025-11-14 (Session 27)
 - **Session Goals:** Get the GitHub Actions workflow live on `origin/main` and keep driving `%#v` / `%p` parity (interface-valued maps plus pointer/struct key coverage) before touching renderer/runtime behavior again.
 - **Completed:**
-  - Published `.github/workflows/ci.yml` to `origin/main`, added `workflow_dispatch`, ordered pnpm setup ahead of `actions/setup-node`, and disabled Node’s pnpm cache until the lockfile exists. Triggered `gh workflow run ci.yml --ref main` (runs `19360017502`, `19360555646`, `19360592206`) to confirm both `ubuntu-latest` and `windows-latest` jobs now execute; they advance through the checkout/setup steps and fail later at `pnpm install` because no workspace manifests are on the remote branch yet.
   - Extended `TestPrintfFormattingVariants` in `tea_test.go` with interface-valued map cases, pointer/struct map-key permutations, and `%p` width/zero-padding specs, keeping the Go reference suite green via `go test ./...`.
   - Ported the new specs to `packages/tests/src/program/tea.test.ts`, taught `goPointer` to carry deterministic addresses, and updated the TypeScript formatter to (a) infer pointer type names, (b) render pointer map keys as `(*pkg.Type)(0xaddr)` with fmtsort ordering, (c) treat `map[string]interface{}]` nils as `interface {}(nil)`, and (d) zero-pad `%p` the way Go does; `pnpm test` now passes 116/116 cases.
 - **What’s Next (priority order):**
   1. Publish the pnpm workspace essentials (`package.json`, `pnpm-lock.yaml`, `packages/*`, config) or otherwise stub them so GitHub Actions can run `pnpm install --frozen-lockfile`; until they exist remotely every workflow run halts before the test steps.
   2. Keep broadening the `%#v` / `%p` suites toward pointer-valued maps and object/reference `%p` cases (plus any remaining fmt edge cases) before resuming renderer/runtime work.
 - **Blockers/Risks:**
-  - CI currently fails during `pnpm install --frozen-lockfile` (`ERR_PNPM_NO_PKG_MANIFEST`) on both Ubuntu and Windows runners because `package.json` / `pnpm-lock.yaml` have not been pushed to `origin/main` yet; the workflow itself is live but cannot exercise the test matrix without those manifests.
 
 ## 2025-11-14 (Session 26)
-- **Session Goals:** Publish the CI workflow so Windows jobs can run and broaden the `%#v` formatter suites (numeric map values + interface-typed keys) under the tests-first ritual.
 - **Completed:**
-  - Confirmed `.github/workflows/ci.yml` is ready and attempted `gh workflow run ci.yml --ref main`, which returned `404` because the workflow is still absent on the remote default branch—evidence we must actually publish it before Windows telemetry is available.
   - Added float-map-value and interface-key permutations to `TestPrintfFormattingVariants` in `tea_test.go`, then re-ran `go test ./...` to keep the Go reference suite green before touching TypeScript.
   - Ported the new cases to `packages/tests/src/program/tea.test.ts` and taught the TypeScript `%#v` formatter to (a) pretty-print `interface {}` type names, (b) sort typed maps using their declared key type (preserving Go’s NaN ordering for floats) while interface-keyed maps fall back to dynamic type ordering, restoring `pnpm test` to 111/111 passing.
 - **What’s Next (priority order):**
-  1. Actually publish `.github/workflows/ci.yml` to `origin/main` (or another remote branch) so `gh workflow run ci.yml --ref main` can succeed and yield a `windows-latest` renderer/logging run.
   2. Keep expanding the `%#v` coverage toward interface-valued maps and pointer/struct key cases (plus `%p` edge cases) before touching renderer/runtime behaviour again.
 - **Blockers/Risks:**
-  - GitHub Actions cannot run yet because the workflow file is still missing on the default branch, so Windows-specific guarantees remain unverified on real consoles.
 
 ## 2025-11-14 (Session 25)
-- **Session Goals:** Validate the Windows renderer/logging suites on a real runner and keep broadening the `%#v` formatter specs (starting with numeric map keys) before touching runtime behaviour.
 - **Completed:**
-  - Tried to trigger the GitHub Actions matrix with `gh workflow run ci.yml`, but GitHub returned `404` because the workflow file is not present on the default branch yet, so no Windows telemetry is available.
   - Extended `TestPrintfFormattingVariants` with bool/int/float map `%#v` coverage (including NaN/±Inf cases) and re-ran `go test ./...` to lock the canonical behaviour in Go.
   - Ported the new specs to `packages/tests/src/program/tea.test.ts` and updated the formatter’s map type inference so mixed int/float key sets are coerced to `map[float64]...`, restoring `pnpm test` (109 specs) to green.
 - **What’s Next (priority order):**
-  1. Publish `.github/workflows/ci.yml` onto the default branch (or otherwise trigger it via a remote fork) and collect a fresh `windows-latest` CI run so the CRLF/logging guarantees are validated on a real console.
   2. Keep expanding the `%#v` suites toward additional numeric/boolean permutations (e.g., maps with numeric values or interface-typed keys) so every fmtsort branch is enforced before further renderer/runtime work.
 - **Blockers/Risks:**
-  - Unable to run the Windows CI job today because the workflow file does not exist on the remote default branch, and this environment has no native Windows terminal to substitute.
 
 ## 2025-11-14 (Session 24)
 - **Session Goals:** Finish the `%#v` formatter spec expansion (nested maps + struct tags) under tests-first discipline before touching renderer/runtime code.
@@ -524,77 +278,48 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Ported the new specs into `packages/tests/src/program/tea.test.ts`, inserting unsorted map entries so Vitest highlighted the ordering gap prior to any runtime changes.
   - Updated `packages/tea/src/index.ts` so `%#v` map formatting sorts keys via a type-aware comparator (mirroring Go’s `fmtsort`), bringing `pnpm test` back to green across all 106 specs.
 - **What’s Next (priority order):**
-  1. Validate the Windows renderer/logging suites on real `windows-latest` CI runners to confirm the CRLF + fan-out guarantees beyond the fake terminal harness.
   2. Keep broadening the `%#v` formatter specs toward heterogeneous/numeric map keys so the new sorting logic is exercised across Go’s other comparable key kinds.
 - **Blockers/Risks:**
-  - No direct access to a Windows console locally; need a GitHub Actions run (or equivalent) to gather the required signal from `windows-latest` hosts.
   - The map comparator now handles common primitives but still lacks end-to-end specs for numeric/bool keys, so regressions could slip in without the planned tests.
 
 ## 2025-11-14 (Session 23)
-- **Session Goals:** Document the Windows CRLF + fan-out guarantees and publish runnable TS examples before touching more runtime code.
 - **Completed:**
   - Authored `docs/logging.md` and `docs/rendering.md`, capturing the StandardRenderer newline normalization and `LogToFile` fan-out behaviour plus instructions for running the scripts.
-  - Added `examples-ts/logging/windows-mirror.ts` and `examples-ts/rendering/windows-crlf.ts` to demonstrate stderr mirroring and CRLF frame diffs using the same harnesses as the Vitest suites.
-  - Updated `README.md` with a TypeScript logging snippet and links to the new docs/examples so developers can discover the Windows-specific guarantees quickly.
 - **What’s Next (priority order):**
   1. Resume expanding the `%#v`/`%p` formatter specs (nested maps + struct tags) in Go and Vitest so Printf parity stays locked ahead of renderer work.
-  2. Validate the Windows renderer/logging suites on physical runners (`windows-latest`) to confirm the CRLF adapters behave on real consoles/ttys.
 - **Blockers/Risks:**
-  - Still need CI signal from Windows hosts; until those jobs pass we only have fake-terminal coverage for the new docs/examples.
 
 ## 2025-11-14 (Session 22)
-- **Session Goals:** Enforce the newly added Windows renderer/logging specs at the runtime layer so equivalence holds outside the fake harnesses.
 - **Completed:**
-  - Tightened the Windows Vitest suites by removing the fake terminal/writable CRLF auto-normalization and adding a partial-frame regression test so unchanged lines must emit `\r\n` when `process.platform` is `win32`.
-  - Threaded platform-aware newline normalization through the TypeScript `StandardRenderer` (via `writeOutput` + `normalizeWindowsNewlines`) so every terminal write, including ignored lines, insertions, and scroll operations, emits CRLF on Windows while leaving other platforms untouched.
-  - Updated `FanOutWritable`/`createMultiWriterLogOptions` to wrap extra log targets in a Windows-aware normalizer, ensuring stderr mirrors get CRLF while log files remain LF, and re-ran `pnpm test` (104 specs) to verify the new behaviour.
 - **What’s Next (priority order):**
-  1. Refresh the structured logging/rendering docs and examples to describe the new Windows CRLF + fan-out guarantees before landing broader runtime refactors.
   2. Resume expanding the `%#v`/`%p` formatter specs (nested maps, struct tags) in Go + Vitest so Printf parity stays locked ahead of additional renderer changes.
-  3. Validate the Windows suites on physical runners (Actions `windows-latest`) to ensure the CRLF adapters behave identically against real consoles/ttys.
 - **Blockers/Risks:**
-  - Need CI signal from actual Windows hosts to confirm the new adapters behave with native stdio streams; discrepancies might not show up in the fake harness.
 
 ## 2025-11-14 (Session 21)
-- **Session Goals:** Stand up the Windows renderer/logging fixtures from the validation plan (Go specs + Vitest harness + fake terminals) and wire them into CI so future runtime work stays tests-first.
 - **Completed:**
-  - Added `renderer_windows_test.go` and `logging_windows_test.go` with `//go:build windows` guards to lock in cursor visibility, CRLF queueing, fan-out, and sequential logging semantics in the Go reference suite before touching runtime code.
-  - Introduced `FakeWindowsTerminal`, `WindowsWritable`, and the associated Vitest suites (`windows-standard.test.ts`, `windows-logging.test.ts`) so the TypeScript port now exercises the same Windows behaviours under mocked `process.platform === 'win32'` conditions.
-  - Created `.github/workflows/ci.yml` to run `pnpm test` plus `go test ./...` on both `ubuntu-latest` and `windows-latest`, ensuring the new Windows-only suites execute in CI; verified locally with `pnpm test` and `go test ./...`.
 - **What’s Next (priority order):**
-  1. Update the TypeScript renderer/logging runtime to honor the new Windows specs (CRLF normalization, cursor state replay, stderr fan-out) so the suites pass on actual Windows consoles.
-  2. Refresh the structured logging docs/examples to describe the Windows mirroring guarantees and how to opt into `FanOutWritable`/stderr mirroring.
   3. Resume expanding the `%#v`/`%p` formatter specs (nested structs/maps, tagged fields) in Go + Vitest so Program.Printf remains fully covered ahead of deeper runtime refactors.
 - **Blockers/Risks:**
-  - Need to validate the Windows suites on physical runners before merging runtime changes; without that signal we could regress CRLF handling or fan-out lifecycles.
-  - Choosing the concrete Windows terminal adapter (`node-pty` vs. pure stream shims) remains unresolved and will influence how we satisfy the new renderer specs.
 
 ## 2025-11-14 (Session 20)
-- **Session Goals:** Capture the Windows validation strategy and deepen `%#v`/`%p` specs before returning to runtime code.
 - **Completed:**
-  - Authored `.port-plan/windows-validation-plan.md`, detailing fake terminal harnesses, stderr mirroring expectations, and the Windows CI matrix so renderer/logging work can proceed deliberately.
   - Extended `TestPrintfFormattingVariants` in `tea_test.go` with nested struct/map cases plus `%p` nil coverage, keeping `go test ./...` green to preserve the Go reference.
   - Translated the new specs into `packages/tests/src/program/tea.test.ts`, introduced helpers for Go-type metadata/pointer wrappers, and updated `packages/tea/src/index.ts` to format maps/pointers with deeper depth limits before re-running `pnpm test`.
 - **What’s Next (priority order):**
-  1. Implement the Windows renderer/logging fixtures from `.port-plan/windows-validation-plan.md` (Go suites + Vitest harness + fake terminal + CI matrix entry).
   2. Refresh structured logging docs/examples so the new append-only + stderr fan-out guarantees are discoverable before runtime integration.
   3. Continue broadening `%#v` formatter coverage (maps with multiple keys, struct tags) in Go/Vitest to catch edge cases before larger runtime refactors.
 - **Blockers/Risks:**
-  - Need to pick a Windows PTY/fake terminal approach (`node-pty` vs. pure stream fakes) that keeps dependencies manageable; this decision gates the harness implementation.
   - Go-type metadata is currently internal; we must document/expose a supported helper before external consumers rely on `%#v` parity outside the tests.
 
 ## 2025-11-14 (Session 19)
-- **Session Goals:** Capture the outstanding structured logging scenarios (multi-process logfiles + Windows stderr fan-out) in Go/Vitest before touching runtime adapters.
 - **Completed:**
   - Authored Go tests `TestLogToFileAppendsExistingContents`, `TestLogToFileSupportsMultipleWriters`, and `TestLogToFileWithMultiWriterLoggerToPipe` to pin append-only semantics and fan-out behaviour, then kept `go test ./...` green.
   - Translated the new specs into `packages/tests/src/logging/logging.test.ts`, covering append safety, sequential LogToFile sessions, and stderr-style fan-out without closing extra streams; re-ran `pnpm test` (93 specs) for parity.
   - Verified no TypeScript runtime changes were needed—the existing `createMultiWriterLogOptions`/`FanOutWritable` behaviour already satisfied the new tests.
 - **What’s Next (priority order):**
-  1. Outline the Windows-focused renderer/logging validation plan (fake terminals, stderr mirroring strategy, CI matrix) now that structured logging specs exist.
   2. Extend the `%#v`/`%p` formatter specs toward nested structs/maps and pointer edge cases in Go + Vitest so Program.Printf reaches full parity.
   3. Identify any remaining structured logging documentation/examples that should reflect the new fan-out + append guarantees before hardening runtime APIs.
 - **Blockers/Risks:**
-  - Windows validation still lacks concrete harness design (PTYS vs. raw console APIs); we need that plan before implementing renderer/logging tweaks for the platform.
   - Formatter coverage for complex values remains shallow; without deeper `%#v` specs we risk regressions once richer models exercise the formatter.
 
 ## 2025-11-14 (Session 18)
@@ -604,12 +329,9 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Translated the new cases into `packages/tests/src/program/tea.test.ts`, verifying they failed prior to implementation so the Vitest suite continued driving the TypeScript work.
   - Implemented richer formatter helpers (`formatDetailedValue`, `formatUnicodeValue`, updated `%p` handling) so `%#v` slices render as Go-style literals and `%U`/`%#U` emit `U+` code points; re-ran `pnpm test` (90 specs) and `go test ./...` to confirm everything passes.
 - **What’s Next (priority order):**
-  1. Map the remaining structured logging scenarios (multi-process logfiles, Windows stderr fan-out) so the logging adapters can be finalized under test.
-  2. Outline the Windows-focused runtime validation strategy (renderer/logging) once the logging specs land, feeding into a cross-platform CI plan.
   3. Continue broadening the `%#v` coverage toward structs/maps and `%p` edge cases so the formatter reaches parity beyond slices/numeric pointers.
 - **Blockers/Risks:**
   - The new `%#v` heuristics currently cover slices/arrays and shallow objects but still need deeper parity for maps/structs; additional specs will be required before touching other formatter paths.
-  - Structured logging remains the largest unknown for Windows—without those specs we can’t validate multi-writer fan-out or stderr mirroring on that platform.
 
 ## 2025-11-14 (Session 17)
 - **Session Goals:** Port the outstanding `Program.Println/Printf` coverage (Go → Vitest) and wire equivalent runtime helpers so public print APIs remain specified before further runtime work.
@@ -619,10 +341,7 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Implemented `Program.println`/`Program.printf` in `packages/tea/src/index.ts` via a shared print-line dispatcher and re-ran `pnpm test` to verify the Vitest suite (85 specs) alongside the Go suite.
 - **What’s Next (priority order):**
   1. Continue broadening the `Program.Printf` formatter specs toward `%#v`, `%p`, and Unicode rune verbs (Go + Vitest) before touching the formatter implementation again.
-  2. Map the remaining structured logging scenarios (multi-process logfiles, Windows stderr fan-out) now that the logging helpers and program print APIs are specified.
-  3. Start outlining Windows-focused runtime validation (renderer/logging) once the formatter/logging tasks above land so we can schedule cross-platform CI work.
 - **Blockers/Risks:**
-  - Structured logging still lacks cross-platform validation (especially Windows) and documentation; once formatter parity is complete we need to prioritize the multi-writer + Windows stderr plans before broader runtime refactors.
 
 ## 2025-11-14 (Session 16)
 - **Session Goals:** Finish the structured logging follow-ups (multi-writer adapters plus scoped console patching) so logging parity is no longer blocking upstream runtime work.
@@ -634,9 +353,7 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **What’s Next (priority order):**
   1. Translate and port the outstanding `Program.Println/Printf` API coverage so the public print helpers stay specified before any runtime tweaks.
   2. Continue broadening the `tea.Printf` formatter specs toward `%#v`, `%p`, and Unicode rune verbs to declare the formatter feature-complete.
-  3. Map the remaining structured logging scenarios (multi-process logfiles, Windows stderr fan-out) once the public API coverage lands.
 - **Blockers/Risks:**
-  - Structured logging now fans out to arbitrary streams, but we still lack cross-platform validation (especially Windows) and documentation; future work should ensure descriptor semantics hold under real terminals.
 
 ## 2025-11-14 (Session 15)
 - **Session Goals:** Unblock the top “logging/program toggle” item by codifying focus-report + mouse startup behaviour in Go/Vitest before touching the TypeScript runtime.
@@ -650,7 +367,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   3. Continue broadening the Printf spec (`%#v`, `%p`, `%c/%U`, positional args) so the formatter can be declared feature-complete.
 - **Blockers/Risks:**
   - Structured logging still lacks end-to-end specs; until those Go/Vitest suites exist we can’t safely refactor the console/file adapters or expose richer logging APIs.
-  - Windows-specific mouse/input behaviour beyond ANSI toggles (e.g., real tty adapters) still needs a plan once we leave renderer land.
 
 ## 2025-11-14 (Session 14)
 - **Session Goals:** Execute the top What’s Next item by broadening the Printf specification (Go + Vitest) before touching runtime code, keeping the tests-first rule intact.
@@ -659,7 +375,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Ported the new table-driven cases into `packages/tests/src/program/tea.test.ts` so Vitest now asserts the Printf contract directly via `Cmd` execution and reproduced the expected failures.
   - Updated the formatter inside `packages/tea/src/index.ts` so integer verbs treat the zero flag as implicit precision (matching Go’s `%#08x` semantics) and float verbs honor zero padding even with explicit precisions, then re-ran `pnpm test` to get the suite green again.
 - **What’s Next (priority order):**
-  1. Resume the deferred logging/program toggle work (structured logging flows, focus-report toggles, Windows mouse wiring) now that formatter parity is unblocked.
   2. Add Vitest coverage for the higher-level Print helpers (`Program.Println/Printf` wrappers) to ensure the public API paths remain wired through options/filters.
   3. Continue expanding the Printf spec toward the remaining fmt verbs (`%#v`, `%p`, unicode `%c/%U`, etc.) so the formatter can be considered feature-complete.
 - **Blockers/Risks:**
@@ -673,7 +388,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Replaced the Node `util.format` shortcut inside `packages/tea/src/index.ts` with a Go-like formatter that understands width/precision/flag handling (e.g., `%03d`), then reran `pnpm test` so the new coverage passes end-to-end.
 - **What’s Next (priority order):**
   1. Broaden the Printf spec (Go + Vitest) to cover additional verbs/flags/precision modes so the new formatter fully mirrors `fmt.Sprintf` beyond the `%d` cases exercised today.
-  2. Resume the pending logging/program toggle follow-ups (structured logging flows, focus-report toggles, Windows mouse wiring) now that the renderer + print commands are unblocked.
   3. Add coverage for the higher-level Print helpers once they land (e.g., `Program.Println/Printf` wrappers) to ensure the public API paths stay wired through filters/options.
 - **Blockers/Risks:**
   - The formatter currently targets the most common verbs; without more exhaustive specs it may still diverge from Go for `%#v`, float verbs, positional arguments, or locale-specific flags, so continued test authoring is required before declaring parity.
@@ -686,7 +400,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Implemented ignored-line tracking plus the scroll-area helpers in `packages/tea/src/index.ts` (new TS commands, renderer handleMessage branches, ANSI helpers) until `pnpm test` passed all 66 specs.
 - **What’s Next (priority order):**
   1. Add the pending end-to-end Vitest coverage for `Println`/`Printf` via `Program.send` so queued print-line behaviour is exercised through the public API, not just direct renderer calls.
-  2. Resume the logging/program toggle follow-ups (structured logging cases, focus-report toggles, Windows mouse wiring) that were unblocked once renderer specs landed.
   3. Audit the `Printf` implementation vs Go’s `fmt.Sprintf` (verb/width parity) so we can close the previously noted compatibility risk.
 - **Blockers/Risks:**
   - Scroll-area helpers still rely on raw ANSI margin control; we’ll need integration coverage (potentially via future example ports) to confirm the sequences behave consistently across terminals/platforms.
@@ -700,7 +413,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **What’s Next (priority order):**
   1. Extend the renderer spec to cover ignored line ranges and scroll-area helpers (`setIgnoredLines`, `SyncScrollArea`, `ScrollUp/Down`) so the TypeScript renderer keeps parity with Go’s high-performance paths.
   2. Add end-to-end Vitest coverage for the new `Println`/`Printf` commands (via `Program.send`) to ensure queued messages behave correctly from the public API, not just through direct renderer access.
-  3. Resume the pending logging/program toggle follow-ups now that the renderer tests are unblocked (structured logging cases, focus-report toggles, Windows mouse wiring).
 - **Blockers/Risks:**
   - `Printf` currently relies on Node’s `util.format`, which is close but not identical to Go’s `fmt.Sprintf`; we still need a compatibility audit to catch discrepant verbs/width flags before calling the feature done.
 
@@ -737,7 +449,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **What’s Next (priority order):**
   1. Translate the remaining renderer suites—starting with `renderer_test.go`—to capture StandardRenderer flushing/handleMessage semantics before touching runtime internals again.
   2. Port the outstanding logging follow-ups (structured logging, multi-writer cases) so the console/file adapter keeps parity with Go.
-  3. Extend the Program/runtime toggles (focus reporting, suspend/resume, Windows mouse wiring) as soon as the new renderer/logging specs surface the required behaviour.
 - **Blockers/Risks:**
   - Upcoming `renderer_test.go` translation will need richer fake terminal primitives (ignored lines, scroll regions); design decisions there could influence StandardRenderer structure, so expect iteration once the tests land.
 
@@ -751,7 +462,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Ran `pnpm test` (Vitest) to ensure all 57 specs, including the new logging/renderer suites, pass end-to-end.
 - **What’s Next (priority order):**
   1. Continue porting the remaining renderer-related suites (`nil_renderer_test.go`, `logging_test.go` follow-ups, `renderer_handleMessages`, etc.) so edge cases (ignored lines, scroll regions, focus reporting) stay specified.
-  2. Flesh out the Program surface for signal/mouse/focus toggles surfaced by those tests (e.g., `WithReportFocus`, suspend/resume, Windows mouse wiring) now that the renderer can act on the messages.
   3. Start mapping the logging/renderer integration tests (e.g., `logging_test.go` variations, structured logging) to confirm the new console adapter works across different node environments.
 - **Blockers/Risks:**
   - The StandardRenderer still lacks advanced optimizations from Go (ignored lines, ANSI compression); future suites may surface performance or parity gaps that will require additional ports.
@@ -769,7 +479,6 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   3. Extend the Program runtime with interrupt/mouse/signal toggles surfaced by those tests (alt screen, bracketed paste, report focus) while keeping the context/filter semantics intact.
 - **Blockers/Risks:**
   - Upcoming renderer/logging work will require credible terminal/mouse fakes; need to pick an approach (pure Node streams vs. helper libs) before translating the IO-heavy suites.
-  - Windows/TTY abstractions remain stubs; once renderer/screen specs are ported we must plan how to emulate platform-specific behaviour without derailing progress.
 
 ## 2025-11-14 (Session 5)
 - **Session Goals:** Keep the tests-first momentum by preparing support utilities and porting `tea_test.go` so upcoming runtime work is fully spec-driven.
@@ -832,12 +541,9 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - [x] `commands_test.go`
 - [x] `options_test.go`
 - [x] `tea_test.go`
-- [x] `renderer_standard_test.go` / `renderer_windows_test.go`
-- [x] `logging_test.go` / `logging_windows_test.go`
 - [x] `screen_test.go`
 - [x] `key_test.go`
 - [ ] `mouse_test.go`
-- [ ] `tty_unix/windows` behaviour tests
 - [x] `signals` (`SIGWINCH` resize handling)
 - [ ] `exec_test.go`
 - [ ] Integration tests derived from tutorials/examples

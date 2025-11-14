@@ -27,10 +27,8 @@ a framerate-based renderer, mouse support, focus reporting and more.
 To get started, see the tutorial below, the [examples][examples], the
 [docs][docs], the [video tutorials][youtube] and some common [resources](#libraries-we-use-with-bubble-tea).
 
-> Working on the TypeScript port? The renderer, logging, and Windows console
-> guides now live in `docs/rendering.md`, `docs/logging.md`, and
-> `docs/windows-console.md`, complete with Windows-specific CRLF/fan-out
-> coverage, pseudo-console lifecycle notes, and reference scripts in
+> Working on the TypeScript port? The renderer and logging guides live in
+> `docs/rendering.md` and `docs/logging.md`, along with reference scripts in
 > `examples-ts/`.
 
 [youtube]: https://charm.sh/yt
@@ -328,8 +326,6 @@ console.log('mirrored log entry');
 
 process.on('exit', () => logfile.end());
 ```
-
-> See `examples-ts/logging/windows-mirror.ts` for a runnable fan-out demo.
 
 To see what’s being logged in real time, run `tail -f debug.log` while you run
 your program in another window.

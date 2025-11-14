@@ -27,6 +27,7 @@ import {
   WithAltScreen,
   WithOutput,
   WithReportFocus,
+  WindowSizeMsg,
   keyToString
 } from '@bubbletea/tea';
 import { InputReaderCanceledError } from '@bubbletea/tea/internal';
@@ -88,6 +89,9 @@ const isQuitMsg = (msg: Msg): msg is QuitMsg =>
 
 const isKeyMsg = (msg: Msg): msg is KeyMsg =>
   isRecord(msg) && typeof (msg as KeyMsg).type === 'number';
+
+const isWindowSizeMsg = (msg: Msg): msg is WindowSizeMsg =>
+  isRecord(msg) && (msg as MsgWithType).type === 'bubbletea/window-size';
 
 const isIncrementMsg = (msg: Msg): msg is IncrementMsg =>
   isRecord(msg) && (msg as MsgWithType).type === 'increment';
@@ -1723,6 +1727,70 @@ describe('Program lifecycle (tea_test.go parity)', () => {
       });
       expect(program.renderer.bracketedPasteActive()).toBe(false);
       expect(program.renderer.reportFocus()).toBe(false);
+
+      input.end('q');
+      const result = await runPromise;
+      expect(result.err).toBeNull();
+    });
+
+    it('re-emits the latest window size when the terminal changes while released', async () => {
+      class WindowSizeModel implements Model {
+        public windowSizes: Array<{ width: number; height: number }> = [];
+
+        init(): Cmd {
+          return null;
+        }
+
+        update(msg: Msg) {
+          if (isWindowSizeMsg(msg)) {
+            this.windowSizes.push({ width: msg.width, height: msg.height });
+            return [this, null] as const;
+          }
+          if (isKeyMsg(msg) && keyToString(msg) === 'q') {
+            return [this, Quit] as const;
+          }
+          return [this, null] as const;
+        }
+
+        view(): string {
+          return 'window-size-test\n';
+        }
+      }
+
+      const input = new FakeTtyInput(false);
+      const output = new FakeTtyOutput();
+      output.columns = 90;
+      output.rows = 20;
+      const model = new WindowSizeModel();
+      const { program } = createProgram(model, WithInput(input), WithOutput(output));
+      const runPromise = awaitRun(program);
+
+      await waitFor(() => input.rawModeCalls.includes(true), {
+        timeoutMs: 500,
+        errorMessage: 'program never entered raw mode'
+      });
+      await waitFor(() => model.windowSizes.length > 0, {
+        timeoutMs: 500,
+        errorMessage: 'initial window size was never emitted'
+      });
+
+      program.releaseTerminal();
+      model.windowSizes = [];
+
+      const width = 132;
+      const height = 40;
+      output.columns = width;
+      output.rows = height;
+
+      program.restoreTerminal();
+
+      await waitFor(
+        () => model.windowSizes.some((entry) => entry.width === width && entry.height === height),
+        {
+          timeoutMs: 500,
+          errorMessage: 'window size change was not emitted after restoring the terminal'
+        }
+      );
 
       input.end('q');
       const result = await runPromise;

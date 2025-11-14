@@ -39,28 +39,4 @@ console.log('This line hits both debug.log and stderr');
 ```
 
 Fan-out targets stay open for their entire lifetime—passing `process.stderr` is
-safe because Bubble Tea never closes externals. The helper also normalizes CRLF
-for the mirrored targets on Windows while keeping the log file LF-only.
-
-## Windows guarantees
-
-1. The renderer and logger both detect `process.platform === 'win32'` and
-   normalize `\n` → `\r\n` when writing to consoles or fan-out targets. This is
-   true for full frames, partial frame diffs, and `bubbletea/print-line`
-   messages.
-2. `LogToFile` always writes LF so Git-friendly log history stays unchanged on
-   Windows.
-3. `createMultiWriterLogOptions` never closes external streams and mirrors data
-   *after* the log file flushes, preserving Go’s ordering guarantees.
-4. Existing CRLF sequences you log are preserved; the adapter rewrites only lone
-   `\n` characters.
-
-## Example
-
-See `examples-ts/logging/windows-mirror.ts` for a runnable script that enables
-stderr mirroring and prints the observed newline sequences on Windows. Run it
-with any TypeScript runner, for example:
-
-```
-pnpm dlx tsx examples-ts/logging/windows-mirror.ts
-```
+safe because Bubble Tea never closes externals.
