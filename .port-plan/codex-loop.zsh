@@ -42,6 +42,21 @@ while true; do
     --dangerously-bypass-approvals-and-sandbox \
     - <<<"$prompt_content"
 
+  # Auto-commit any changes made during this session
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+  print "[${timestamp}] Auto-committing changes..."
+  
+  cd "$(dirname "$SCRIPT_DIR")" || exit 1
+  if [[ -n $(git status --porcelain) ]]; then
+    git add -A
+    session_num=$(($(git log --oneline | grep -c "Session [0-9]") + 1))
+    git_timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    git commit -m "Session ${session_num}: Auto-commit at ${git_timestamp}" || true
+    print "[${timestamp}] Changes committed."
+  else
+    print "[${timestamp}] No changes to commit."
+  fi
+
   timestamp=$(date '+%Y-%m-%d %H:%M:%S')
   print "[${timestamp}] Codex run finished; sleeping ${SLEEP_SECONDS}s."
   sleep "$SLEEP_SECONDS"
