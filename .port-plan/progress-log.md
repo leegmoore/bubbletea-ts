@@ -8,6 +8,19 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
 - End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
 
+## 2025-11-14 (Session 49)
+- **Session Goals:** Unblock the next Windows test translations by extending the console binding + fake harness to stream resize/mouse/pseudo-console records under tests-first discipline.
+- **Completed:**
+  - Expanded `packages/tea/src/internal/windows/binding.ts` with input-record unions, pseudo-console handles, and cancelation hooks so future runtime code can rely on a single contract.
+  - Rebuilt `FakeWindowsConsoleBinding` with async record queues, helpers to queue key/mouse/window events, pseudo-console lifecycle tracking, and inspection helpers for upcoming Vitest suites.
+  - Added harness-focused Vitest coverage (FIFO streaming, resize emissions, cancelIo handling) and ran `pnpm vitest run packages/tests/src/internal/windows-console-binding.test.ts` to keep the suite green.
+- **What’s Next (priority order):**
+  1. Translate the Go `signals_windows.go` resize semantics into a Vitest suite (e.g., `packages/tests/src/signals/windows-resize.test.ts`) using the new harness so Programs emit `WindowSizeMsg` on Windows.
+  2. Port the `inputreader_windows.go` behaviour into Vitest (mouse flag toggles, cancelation) and adapt the TS input reader to satisfy those specs.
+  3. Document the ReleaseTerminal/RestoreTerminal contract for Suspend/Release command consumers so downstream exec/signal work has a reference.
+- **Blockers/Risks:**
+  - Native Windows binding prototype (node-addon-api vs ffi) is still pending and requires platform-specific tooling—track as OUT OF SCOPE FOR LOOP until after the Windows test suites compile.
+
 ## 2025-11-14 (Session 48)
 - **Session Goals:** Port the Go `ReleaseTerminal`/`RestoreTerminal` specs into Vitest and wire the runtime through that lifecycle (tests-first) so future console/tty work can build on a faithful suspension pathway.
 - **Completed:**

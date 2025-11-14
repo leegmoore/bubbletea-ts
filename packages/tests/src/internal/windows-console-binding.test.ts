@@ -104,3 +104,77 @@ describe('enableWindowsVirtualTerminalOutput', () => {
     expect(binding.setConsoleModeCalls).toHaveLength(0);
   });
 });
+
+describe('FakeWindowsConsoleBinding record helpers', () => {
+  const createIterator = (binding: FakeWindowsConsoleBinding, handle: number) =>
+    binding.readConsoleInput(handle)[Symbol.asyncIterator]();
+
+  it('streams queued key and mouse events in FIFO order', async () => {
+    const binding = new FakeWindowsConsoleBinding();
+    const handle = binding.createHandle();
+    const iterator = createIterator(binding, handle);
+
+    const first = iterator.next();
+    binding.queueKeyEvent(handle, { charCode: 65, virtualKeyCode: 0x41 });
+    const firstRecord = await first;
+    expect(firstRecord.done).toBe(false);
+    expect(firstRecord.value).toEqual({
+      type: 'key',
+      keyDown: true,
+      repeatCount: 1,
+      charCode: 65,
+      virtualKeyCode: 0x41,
+      controlKeyState: 0
+    });
+
+    const second = iterator.next();
+    binding.queueMouseEvent(handle, {
+      position: { x: 3, y: 4 },
+      buttonState: 0x0001,
+      controlKeyState: 0x0002,
+      eventFlags: 0x0004
+    });
+    const secondRecord = await second;
+    expect(secondRecord.done).toBe(false);
+    expect(secondRecord.value).toEqual({
+      type: 'mouse',
+      position: { x: 3, y: 4 },
+      buttonState: 0x0001,
+      controlKeyState: 0x0002,
+      eventFlags: 0x0004
+    });
+  });
+
+  it('emits window-buffer-size events when pseudo consoles resize', async () => {
+    const binding = new FakeWindowsConsoleBinding();
+    const pseudo = binding.createPseudoConsole({ columns: 80, rows: 24 });
+    const iterator = createIterator(binding, pseudo.input);
+
+    const nextRecordPromise = iterator.next();
+    binding.resizePseudoConsole(pseudo.handle, { columns: 120, rows: 40 });
+    const record = await nextRecordPromise;
+
+    expect(record.done).toBe(false);
+    expect(record.value).toEqual({
+      type: 'window-buffer-size',
+      size: { columns: 120, rows: 40 }
+    });
+    expect(binding.resizePseudoConsoleCalls).toEqual([
+      { handle: pseudo.handle, size: { columns: 120, rows: 40 } }
+    ]);
+    expect(binding.pseudoConsoleSize(pseudo.handle)).toEqual({ columns: 120, rows: 40 });
+  });
+
+  it('cancels pending input reads when cancelIo is invoked', async () => {
+    const binding = new FakeWindowsConsoleBinding();
+    const handle = binding.createHandle();
+    const iterator = createIterator(binding, handle);
+
+    const pending = iterator.next();
+    binding.cancelIo(handle);
+
+    const result = await pending;
+    expect(result.done).toBe(true);
+    expect(binding.cancelIoCalls).toEqual([handle]);
+  });
+});
