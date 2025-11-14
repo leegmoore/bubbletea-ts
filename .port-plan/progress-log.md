@@ -11,6 +11,19 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 53)
+- **Session Goals:** Lock down Windows release/restore semantics tests-first so runtime tweaks have a spec.
+- **Completed:**
+  - Added release/restore coverage to `packages/tests/src/program/windows-console-mode.test.ts`, verifying console modes revert to the pre-VT state and that mouse tracking stays off until re-enabled after restore.
+  - Updated `Program.setupTerminalInput()`/`prepareWindowsConsoleInput()` to capture the Windows console mode before VT flags flip and wired the new `captureWindowsConsoleMode()` helper through `releaseTerminal()`.
+  - Ran `pnpm vitest run packages/tests/src/program/windows-console-mode.test.ts` to confirm the new suite and runtime changes pass.
+- **What’s Next (priority order):**
+  1. Draft the native Windows binding loader plan (node-addon-api vs FFI) detailing discovery, error surfacing, and how tests inject the fake binding.
+  2. Outline the pseudo-console native binding implementation steps (entrypoints, build targets, CI coverage) so the work can begin as soon as a Windows toolchain is available.
+  3. Prototype the native Windows binding itself — OUT OF SCOPE FOR LOOP until the Windows toolchain is available.
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-14 (Session 52)
 - **Session Goals:** Capture the Windows console lifecycle in docs and enforce the console-mode flag behaviour via tests-first before touching the runtime.
 - **Completed:**

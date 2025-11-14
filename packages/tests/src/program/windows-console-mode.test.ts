@@ -151,5 +151,54 @@ describe('Windows console mode flags', () => {
       platformSpy.mockRestore();
     }
   });
-});
 
+  it('restores the original console mode on release and allows mouse toggles after restore', async () => {
+    const platformSpy = mockWindowsPlatform();
+    const binding = installFakeBinding();
+    const inputHandle = 309;
+    const originalMode = 0x0400;
+    const input = new FakeWindowsTtyInput(inputHandle);
+    const output = new FakeWindowsTtyOutput();
+    binding.seedConsoleMode(inputHandle, originalMode);
+    const program = NewProgram(new IdleModel(), WithInput(input), WithOutput(output));
+    const runPromise = awaitRun(program);
+
+    try {
+      await expectModeEventually(binding, inputHandle, (value) => (value & baseFlags) === baseFlags);
+
+      await program.send(EnableMouseCellMotion());
+
+      await expectModeEventually(binding, inputHandle, (value) =>
+        (value & WINDOWS_ENABLE_MOUSE_INPUT) === WINDOWS_ENABLE_MOUSE_INPUT
+      );
+
+      program.releaseTerminal();
+
+      await expectModeEventually(binding, inputHandle, (value) => value === originalMode);
+
+      program.restoreTerminal();
+
+      await expectModeEventually(binding, inputHandle, (value) =>
+        (value & baseFlags) === baseFlags &&
+        (value & WINDOWS_ENABLE_MOUSE_INPUT) === 0
+      );
+
+      await program.send(EnableMouseCellMotion());
+
+      await expectModeEventually(binding, inputHandle, (value) =>
+        (value & WINDOWS_ENABLE_MOUSE_INPUT) === WINDOWS_ENABLE_MOUSE_INPUT
+      );
+
+      await program.send(DisableMouse());
+
+      await expectModeEventually(binding, inputHandle, (value) =>
+        (value & WINDOWS_ENABLE_MOUSE_INPUT) === 0
+      );
+
+      program.quit();
+      await runPromise;
+    } finally {
+      platformSpy.mockRestore();
+    }
+  });
+});

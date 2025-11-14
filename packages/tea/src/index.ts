@@ -1151,9 +1151,11 @@ export class Program {
 
     if (isWindowsPlatform()) {
       try {
+        let cachedWindowsConsoleMode: number | null = null;
         if (ttyInput) {
+          cachedWindowsConsoleMode = this.captureWindowsConsoleMode(ttyInput);
           enableWindowsVirtualTerminalInput(ttyInput);
-          this.prepareWindowsConsoleInput(ttyInput);
+          this.prepareWindowsConsoleInput(ttyInput, cachedWindowsConsoleMode);
         }
         if (ttyOutput) {
           enableWindowsVirtualTerminalOutput(ttyOutput);
@@ -1195,7 +1197,30 @@ export class Program {
     }
   }
 
-  private prepareWindowsConsoleInput(ttyInput: RawModeTty | null): void {
+  private captureWindowsConsoleMode(ttyInput: RawModeTty | null): number | null {
+    if (!isWindowsPlatform() || !ttyInput) {
+      return null;
+    }
+    const binding = getWindowsConsoleBinding();
+    if (!binding) {
+      return null;
+    }
+    const handle = this.resolveWindowsConsoleHandle(ttyInput);
+    if (handle == null) {
+      return null;
+    }
+    const currentMode = binding.getConsoleMode(handle);
+    this.windowsConsoleInputHandle = handle;
+    if (this.windowsConsoleOriginalMode == null) {
+      this.windowsConsoleOriginalMode = currentMode;
+    }
+    return currentMode;
+  }
+
+  private prepareWindowsConsoleInput(
+    ttyInput: RawModeTty | null,
+    cachedConsoleMode: number | null = null
+  ): void {
     if (!isWindowsPlatform() || !ttyInput) {
       return;
     }
@@ -1207,7 +1232,7 @@ export class Program {
     if (handle == null) {
       return;
     }
-    const currentMode = binding.getConsoleMode(handle);
+    const currentMode = cachedConsoleMode ?? binding.getConsoleMode(handle);
     if (this.windowsConsoleOriginalMode == null) {
       this.windowsConsoleOriginalMode = currentMode;
     }
