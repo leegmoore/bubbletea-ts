@@ -11,6 +11,19 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 56)
+- **Session Goals:** Codify the native Windows console binding contract and stand up the addon/ffi package scaffolding ahead of native work.
+- **Completed:**
+  - Added `packages/tests/src/native/windows-console-binding.integration.test.ts`, a Windows-only suite covering pseudo console resize events, cancelation, and teardown semantics (with TODOs queued for key/mouse `INPUT_RECORD` coverage) so CI can start tracking the expected behaviour before the addon exists.
+  - Scaffolded `@bubbletea/windows-binding` and `@bubbletea/windows-binding-ffi` (package manifests, README docs, tsconfig, stub exports) and wired the new path aliases into `tsconfig.base.json` so Vitest/TypeScript can resolve the modules immediately.
+  - Ran `pnpm vitest run packages/tests/src/native/windows-console-binding.integration.test.ts` to verify the suite skips on non-Windows hosts and advertises the pending TODOs without blocking macOS/Linux contributors.
+- **What’s Next (priority order):**
+  1. Build the Windows input harness (likely via `WriteConsoleInputW`) so the integration suite can assert real KEY_EVENT and MOUSE_EVENT records on native handles.
+  2. Translate the Windows binding loader spec into `packages/tests/src/internal/windows-binding-loader.test.ts` and start sketching the loader implementation scaffolding.
+  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until we have a Windows dev environment.
+- **Blockers/Risks:**
+  - Shipping/validating the native binding still requires a Windows-capable toolchain; continue flagging as OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-14 (Session 55)
 - **Session Goals:** Turn the top Windows “What’s Next” items into concrete implementation + workspace plans so future sessions can start translating specs/tests ahead of the native work.
 - **Completed:**

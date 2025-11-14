@@ -14,6 +14,18 @@
       ],
       "@bubbletea/tea/internal/*": [
         "packages/tea/src/internal/*"
+      ],
+      "@bubbletea/windows-binding": [
+        "packages/windows-binding/src/index.ts"
+      ],
+      "@bubbletea/windows-binding/*": [
+        "packages/windows-binding/src/*"
+      ],
+      "@bubbletea/windows-binding-ffi": [
+        "packages/windows-binding-ffi/src/index.ts"
+      ],
+      "@bubbletea/windows-binding-ffi/*": [
+        "packages/windows-binding-ffi/src/*"
       ]
     },
     "strict": true,
