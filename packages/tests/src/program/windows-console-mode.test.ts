@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { PassThrough } from 'node:stream';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,12 +16,17 @@ import {
 import {
   WINDOWS_ENABLE_EXTENDED_FLAGS,
   WINDOWS_ENABLE_MOUSE_INPUT,
-  WINDOWS_ENABLE_WINDOW_INPUT,
-  setWindowsConsoleBindingForTests
+  WINDOWS_ENABLE_WINDOW_INPUT
 } from '@bubbletea/tea/internal';
+import {
+  resetWindowsConsoleBindingLoaderForTests,
+  setWindowsBindingModuleLoaderForTests
+} from '@bubbletea/tea/internal/windows/binding-loader';
 
 import { waitFor, withTimeout } from '../utils/async';
 import { FakeWindowsConsoleBinding } from '../utils/windows-console-harness';
+
+const nativeRequire = createRequire(import.meta.url);
 
 const awaitRun = (program: Program, timeoutMs = 4000) => withTimeout(program.run(), timeoutMs);
 
@@ -68,9 +74,11 @@ class FakeWindowsTtyOutput extends PassThrough {
 
 const mockWindowsPlatform = () => vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
 
-const installFakeBinding = () => {
+let activeBindingFactory: (() => FakeWindowsConsoleBinding) | null = null;
+
+const installLoaderBinding = (): FakeWindowsConsoleBinding => {
   const binding = new FakeWindowsConsoleBinding();
-  setWindowsConsoleBindingForTests(binding);
+  activeBindingFactory = () => binding;
   return binding;
 };
 
@@ -85,15 +93,37 @@ const expectModeEventually = async (
   return binding.modeFor(handle) ?? 0;
 };
 
+const installModuleResolver = () => {
+  setWindowsBindingModuleLoaderForTests((specifier) => {
+    if (specifier === '@bubbletea/windows-binding' || specifier === '@bubbletea/windows-binding-ffi') {
+      if (!activeBindingFactory) {
+        throw new Error('Test Windows binding factory not installed');
+      }
+      return {
+        createWindowsConsoleBinding: activeBindingFactory
+      };
+    }
+    return nativeRequire(specifier);
+  });
+};
+
+beforeEach(() => {
+  activeBindingFactory = null;
+  resetWindowsConsoleBindingLoaderForTests();
+  installModuleResolver();
+});
+
 afterEach(() => {
-  setWindowsConsoleBindingForTests(null);
   vi.restoreAllMocks();
+  activeBindingFactory = null;
+  resetWindowsConsoleBindingLoaderForTests();
+  setWindowsBindingModuleLoaderForTests(null);
 });
 
 describe('Windows console mode flags', () => {
   it('enables base flags and mouse input when mouse motion is enabled at startup', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const inputHandle = 301;
     const input = new FakeWindowsTtyInput(inputHandle);
     const output = new FakeWindowsTtyOutput();
@@ -117,7 +147,7 @@ describe('Windows console mode flags', () => {
 
   it('toggles the mouse flag when EnableMouse*/DisableMouse commands run', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const inputHandle = 305;
     const input = new FakeWindowsTtyInput(inputHandle);
     const output = new FakeWindowsTtyOutput();
@@ -154,7 +184,7 @@ describe('Windows console mode flags', () => {
 
   it('restores the original console mode on release and allows mouse toggles after restore', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const inputHandle = 309;
     const originalMode = 0x0400;
     const input = new FakeWindowsTtyInput(inputHandle);

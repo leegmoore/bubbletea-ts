@@ -68,6 +68,25 @@ behaviour by routing every Windows-only operation through the
   asserting that the Win32 flags change exactly when the Go tests say they
   should.
 
+## Troubleshooting
+
+- `BubbleTeaWindowsBindingError` during startup means the loader exhausted every
+  resolution path (path override, addon, FFI). Review
+  [`docs/windows-console-binding-loader.md`](./windows-console-binding-loader.md)
+  for the full env matrix (`BUBBLETEA_WINDOWS_BINDING_PATH`,
+  `BUBBLETEA_WINDOWS_BINDING_MODE`, `BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI`) and for
+  a checklist of common fixes.
+- When Vitest suites need deterministic bindings, prefer
+  `setWindowsConsoleBindingForTests()` or
+  `setWindowsBindingModuleLoaderForTests()` instead of monkey-patching runtime
+  internals; both helpers clean themselves up via
+  `resetWindowsConsoleBindingLoaderForTests()`.
+- If mouse toggles or pseudo console resizes silently stop working, confirm the
+  loader actually returned a binding (log the result of
+  `ensureWindowsConsoleBindingLoaded()` in development) and verify your process
+  truly runs on `win32`—non-Windows platforms will always skip the binding and
+  swallow those commands.
+
 ## Takeaways for future Windows work
 
 - All Windows-only behaviour flows through the binding, so new features (TTY

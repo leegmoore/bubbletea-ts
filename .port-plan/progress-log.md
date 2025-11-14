@@ -11,6 +11,20 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 59)
+- **Session Goals:** Document the shipping Windows binding loader and drive the Program-level Windows console tests through the real loader path instead of manual overrides.
+- **Completed:**
+  - Replaced the placeholder `docs/windows-console-binding-loader.md` plan with a reference guide covering the runtime flow, env matrices, troubleshooting steps, and cross-links into `docs/windows-console.md`, then added a matching troubleshooting section to that guide.
+  - Reworked `packages/tests/src/program/windows-console-mode.test.ts` so it installs fake bindings via `setWindowsBindingModuleLoaderForTests`/`resetWindowsConsoleBindingLoaderForTests`, ensuring Program startup, release, and mouse toggles hit the loader end-to-end rather than `setWindowsConsoleBindingForTests`.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/program/windows-console-mode.test.ts` to keep the Program/Windows suite green after the loader changes.
+- **What’s Next (priority order):**
+  1. Update the remaining Windows-focused specs (e.g., `packages/tests/src/signals/windows-resize.test.ts`, `packages/tests/src/input/windows-console-input.test.ts`) to consume the loader the same way so pseudo console and resize flows exercise the real resolution path.
+  2. Backfill a failure-mode spec that asserts `BubbleTeaWindowsBindingError` surfaces through `Program.run()` when every loader path fails, giving the runtime a regression test for fatal binding issues.
+  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
+- **Blockers/Risks:**
+  - Native Windows binding implementation (Node-API addon + WriteConsoleInput harness validation) still needs a Windows-capable toolchain; keep flagged as OUT OF SCOPE FOR LOOP.
+  - Real `@bubbletea/windows-binding` / `@bubbletea/windows-binding-ffi` implementations remain stubbed, so runtime behaviour on actual Windows consoles still depends on fake bindings until those land.
+
 ## 2025-11-14 (Session 58)
 - **Session Goals:** Translate the Windows binding loader spec into Vitest and wire a real loader that honors env overrides, addon/FFI selection, and test hooks.
 - **Completed:**

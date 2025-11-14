@@ -1,86 +1,99 @@
-# Windows Console Binding Loader Plan
+# Windows Console Binding Loader Reference
 
 _Last updated: 2025-11-14_
 
-## 1. Context
+Bubble Tea’s TypeScript runtime now ships a real loader for the
+`WindowsConsoleBinding` interface. All Windows-only features (VT enablement,
+mouse tracking, pseudo-console resize events, etc.) flow through this loader, so
+every production build and Vitest suite now shares the exact same discovery
+surface.
 
-- The TypeScript runtime already routes every Windows-only code path through the `WindowsConsoleBinding` interface (`packages/tea/src/internal/windows/binding.ts`).
-- Tests inject a fake implementation via `setWindowsConsoleBindingForTests(...)`, but production builds still return `null`, so all Windows-specific flows are effectively no-ops outside of unit tests.
-- Before we can ship mouse/resize/VT features on Windows we need a loader that can discover a real binding, surface configuration errors clearly, and keep the tests-first workflow intact.
+## 1. What the Loader Does
 
-## 2. Goals & Non-goals
+1. **Platform guard.** The loader bails out immediately when
+   `process.platform !== 'win32'`, returning `null` so Linux/macOS callers pay
+   zero overhead.
+2. **Test override.** `setWindowsConsoleBindingForTests(binding)` installs a
+   deterministic fake for suites. When present, the loader returns that binding
+   and never touches the filesystem. Clearing the override (`null`) restores the
+   default behaviour.
+3. **Path override.** When `BUBBLETEA_WINDOWS_BINDING_PATH` is set the loader
+   resolves that path (relative to `process.cwd()` if needed), imports the module
+   via `createRequire`, and expects it to expose either
+   `createWindowsConsoleBinding()` or a default export that returns the binding.
+4. **Addon default.** Absent overrides, we attempt to import
+   `@bubbletea/windows-binding`, our future Node-API addon. Successful loads are
+   cached for the lifetime of the process.
+5. **FFI fallback.** If either `BUBBLETEA_WINDOWS_BINDING_MODE=ffi` or
+   `BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI=1|true` is present, loader failures fall
+   back to `@bubbletea/windows-binding-ffi` (a pure-JS shim). Without those flags
+   we surface the addon failure immediately so production builds don’t silently
+   downgrade.
+6. **Fatal errors.** When every resolution path fails on Windows we throw
+   `BubbleTeaWindowsBindingError`, which records every attempt (mode + specifier)
+   and retains the original cause stack for debugging.
 
-**Goals**
-- Resolve a concrete `WindowsConsoleBinding` at runtime on Windows hosts without burdening non-Windows users.
-- Support both a compiled Node-API addon (preferred for performance and access to Pseudo Console APIs) and a pure-FFI fallback (handy for prototyping or environments without a compiler toolchain).
-- Allow tests (and downstream consumers) to inject fakes deterministically.
-- Fail loudly when the binding is required but missing/misconfigured, with actionable guidance in the error.
+The implementation lives in
+`packages/tea/src/internal/windows/binding-loader.ts` and is fully specified by
+`packages/tests/src/internal/windows-binding-loader.test.ts`.
 
-**Non-goals**
-- Implement the native bindings themselves (covered by the next progress-log item).
-- Ship cross-platform binaries or release automation—those stay out of scope for this loop.
+## 2. Environment Flags
 
-## 3. Loader Architecture
+| Variable | Purpose |
+| --- | --- |
+| `BUBBLETEA_WINDOWS_BINDING_PATH` | Absolute or relative path to a module exporting `createWindowsConsoleBinding()` (handy for local builds or alternate bindings). |
+| `BUBBLETEA_WINDOWS_BINDING_MODE` | Accepts `addon` (default) or `ffi`. `ffi` skips the addon import entirely. |
+| `BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI` | When set to `1` or `true`, allows the loader to fall back to the FFI shim if the addon import fails. |
 
-1. **Module layout**
-   - Keep `binding.ts` as the shared type surface plus the `setWindowsConsoleBindingForTests` helper.
-   - Add `packages/tea/src/internal/windows/binding-loader.ts` that exports:
-     - `ensureWindowsConsoleBindingLoaded(): WindowsConsoleBinding | null`
-     - `setWindowsConsoleBindingOverride(binding: WindowsConsoleBinding | null)` (internal helper invoked by the public test hook).
-   - Update `getWindowsConsoleBinding()` in `binding.ts` to lazily call the loader the first time it is requested outside of tests.
+Unset/blank values are ignored. Boolean-like envs are trimmed and case-insensitive.
 
-2. **Loader responsibilities**
-   - Determine whether the current platform is Windows (`process.platform === 'win32'`). Return `null` immediately on other platforms so Linux/macOS consumers pay zero overhead.
-   - If tests already installed a fake binding via `setWindowsConsoleBindingForTests`, honor it and bypass dynamic loading.
-   - Support three discovery channels, in order:
-     1. **Explicit path override** (`BUBBLETEA_WINDOWS_BINDING_PATH=/absolute/or/relative/path`), allowing advanced users to point at a custom `.node`/JS module.
-     2. **Addon package lookup**: attempt to `require()` / dynamic-import `@bubbletea/windows-binding` (planned Node-API addon built with `node-addon-api`). Resolve platform/arch-specific builds via the package’s `exports` map.
-     3. **FFI fallback**: if `BUBBLETEA_WINDOWS_BINDING_MODE=ffi` (or the addon fails with the specific `MODULE_NOT_FOUND` family of errors), lazy-load a JS shim implemented with `ffi-napi` that surfaces the same interface. This allows development in environments without a prebuilt addon, albeit with slower performance.
-   - Cache the successful binding instance so repeated calls are cheap and so fatal failures are raised only once per process.
+## 3. Error Handling & Diagnostics
 
-3. **node-addon-api vs FFI decision**
-   - **Node-API addon (primary path)**
-     - Pros: direct access to Win32 headers (`GetConsoleMode`, `SetConsoleMode`, `ReadConsoleInputW`, `CreatePseudoConsole`, etc.), best performance, no dependency on external npm modules at runtime.
-     - Cons: requires a full MSVC toolchain to build from source; needs prebuilds for each `arch`/`node-abi` pair.
-   - **FFI fallback (secondary path)**
-     - Pros: pure-JS distribution, great for prototyping or running tests on Windows without compiling native code.
-     - Cons: slower, limited type safety, `ffi-napi` sometimes lags behind new Node releases.
-   - **Decision**: ship the Node-API addon as the default resolution (`@bubbletea/windows-binding` package) and keep the FFI shim strictly opt-in via `BUBBLETEA_WINDOWS_BINDING_MODE=ffi`. This gives us deterministic performance in production while retaining an escape hatch for constrained dev boxes.
+- `BubbleTeaWindowsBindingError` includes `attempts`, a list of `{kind, specifier,
+  error}` entries describing every failed resolution step. The `.cause` field
+  references the first failure (typically the addon import error) for easy stack
+  inspection.
+- Messages include `process.platform` and `process.arch` to simplify support
+  requests (e.g., “Failed to load … on win32-x64”).
+- Each fatal failure suggests trying `BUBBLETEA_WINDOWS_BINDING_PATH` or the FFI
+  mode if a user needs a quick escape hatch.
+- The new troubleshooting checklist in
+  [`docs/windows-console.md#troubleshooting`](./windows-console.md#troubleshooting)
+  links back here for details on interpreting the error.
 
-## 4. Discovery & Error Surfacing Flow
+## 4. Testing & Overrides
 
-1. **Platform gate**: if `process.platform !== 'win32'`, return `null` and skip the rest.
-2. **Test override**: if `activeBinding` is already set by `setWindowsConsoleBindingForTests`, return it.
-3. **Path override**: when `BUBBLETEA_WINDOWS_BINDING_PATH` is defined, resolve it relative to `process.cwd()` (if not absolute), `import()` it, and expect a default export or named `createWindowsConsoleBinding()` factory returning the interface. Wrap resolution errors with a message that repeats the provided path.
-4. **Addon lookup**: attempt to `import('@bubbletea/windows-binding')`. Expect it to expose `createWindowsConsoleBinding()` that returns the binding. If the module is not found or fails to initialize, capture the `cause` and continue to the fallback.
-5. **FFI fallback**: only attempt when `BUBBLETEA_WINDOWS_BINDING_MODE=ffi` (or when `BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI=1` for emergency fallback). Load a local helper such as `packages/tea/src/internal/windows/ffi-binding.ts` that wires `ffi-napi` to the Kernel32 entrypoints.
-6. **Terminal failure**: if all discovery attempts fail on Windows, throw a `BubbleTeaWindowsBindingError` that:
-   - Includes the platform/arch, attempted resolution modes, and the first error stack as `cause`.
-   - Suggests setting `BUBBLETEA_WINDOWS_BINDING_PATH` or `BUBBLETEA_WINDOWS_BINDING_MODE=ffi` as mitigation.
-   - Cross-links to `docs/windows-console-binding-loader.md#troubleshooting` (to be added when the implementation lands).
+- `setWindowsConsoleBindingForTests(binding)` installs a fake binding and caches
+  it immediately so runtime code skips IO entirely. Use this when a suite wants
+  to focus purely on program behaviour (see
+  `packages/tests/src/program/windows-console-mode.test.ts`).
+- `setWindowsBindingModuleLoaderForTests(fn)` replaces `require()` for loader
+  imports, making it easy to intercept `@bubbletea/windows-binding` and return a
+  stub without touching the filesystem.
+- `resetWindowsConsoleBindingLoaderForTests()` clears the override, cache, and
+  custom module loader between tests.
+- When you need to assert behaviour end-to-end (Program → loader → binding),
+  write a temp module to disk and point `BUBBLETEA_WINDOWS_BINDING_PATH` at it so
+  the real resolution path runs inside Vitest.
 
-## 5. Test Strategy
+## 5. Troubleshooting Cheat Sheet
 
-- Add `packages/tests/src/internal/windows-binding-loader.test.ts` with the following cases (Vitest):
-  1. **Non-Windows bypass**: mock `process.platform` to `linux`, ensure loader returns `null` and never attempts dynamic imports.
-  2. **Test override precedence**: call `setWindowsConsoleBindingForTests(fake)` and confirm loader returns it without touching module resolution.
-  3. **Path override success/failure**: mock `import()` via `vi.mock` to return a fake module; verify failures surface sanitized errors mentioning the bad path.
-  4. **Addon happy path**: mock the addon module to return a stub binding and ensure caching prevents duplicate imports.
-  5. **FFI opt-in**: set `BUBBLETEA_WINDOWS_BINDING_MODE=ffi`, mock the shim, and verify loader prefers it over the addon.
-  6. **Fatal error**: simulate addon throw + missing fallback and assert `BubbleTeaWindowsBindingError` message/cause structure matches the doc.
-- Reuse the existing `setWindowsConsoleBindingForTests(null)` cleanup in `afterEach` to avoid leaking state between tests.
+1. **“Failed to load … via @bubbletea/windows-binding”** – confirm the addon
+   package is installed (or pass `BUBBLETEA_WINDOWS_BINDING_PATH` to a local
+   `.node` build). During development set
+   `BUBBLETEA_WINDOWS_BINDING_MODE=ffi` to unblock while the addon compiles.
+2. **“Module at … did not return a valid WindowsConsoleBinding”** – ensure your
+   module exports a function that instantiates the interface (all seven methods
+   must exist).
+3. **Pseudo console/mouse flows doing nothing on Windows** – run with
+   `BUBBLETEA_DEBUG=windows-binding` (planned) and ensure
+   `ensureWindowsConsoleBindingLoaded()` isn’t returning `null` because the
+   loader bailed on a non-Windows platform.
 
-## 6. Implementation Steps
+## 6. Follow-ups
 
-1. Author the loader module + helper error class (tests-first using the suite above).
-2. Update `binding.ts`, `tty.ts`, and `Program` internals to rely on the loader instead of assuming `activeBinding` is already populated.
-3. Land the docs (this file plus a short “Troubleshooting Windows bindings” section in `docs/windows-console.md`).
-4. Wire pnpm scripts so that the addon package can be built locally (placeholder shell script now, actual implementation later).
-
-## 7. Open Questions / Follow-ups
-
-- Determine the final package name for the addon (`@bubbletea/windows-binding` vs `@bubbletea/tea-windows`). The doc currently assumes the former—rename here once the package layout is confirmed.
-- Confirm whether we want an additional env var (`BUBBLETEA_WINDOWS_BINDING_DISABLE=1`) to help diagnose issues by forcing the loader to throw.
-- Decide where to stash instrumentation (e.g., debug logs) so we can ask users to enable `BUBBLETEA_DEBUG=windows-binding` when gathering bug reports.
-
-This plan unblocks the next progress-log item (pseudo-console binding implementation) by spelling out how the runtime will discover and vet the binding once a real implementation exists.
+- Ship the actual `@bubbletea/windows-binding` addon and `@bubbletea/windows-binding-ffi`
+  shim so the loader’s default paths resolve outside of tests.
+- Capture breadcrumbs when the loader throws (e.g., `BUBBLETEA_DEBUG=windows-binding`).
+- Keep `docs/windows-console.md` updated whenever loader semantics change so the
+  troubleshooting guide stays aligned.
