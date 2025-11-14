@@ -9,7 +9,20 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
 
 - **Blockers/Risks:**
-  - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
+- Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
+
+## 2025-11-14 (Session 61)
+- **Session Goals:** Close out the top keyboard/mouse “What’s Next” items so we can roll straight into the tty/signal planning work.
+- **Completed:**
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/key/key.test.ts` to confirm the translated key suite still passes after the recent loader work, keeping the highest-priority spec green before touching runtime code.
+  - Ported Go’s `mouse_test.go` into `packages/tests/src/mouse/mouse.test.ts`, covering `MouseEvent.String` plus the full X10/SGR parser matrices (72 specs) with helper builders that mirror the Go encoders.
+  - Exposed `parseX10MouseEventForTests`/`parseSGRMouseEventForTests` and introduced the public `mouseEventToString` helper in `@bubbletea/tea`, then kept both the new mouse suite and the existing key suite green via `pnpm --filter @bubbletea/tests exec vitest run src/key/key.test.ts src/mouse/mouse.test.ts`.
+- **What’s Next (priority order):**
+  1. Draft the tty/signal translation plan referenced in `.port-plan/plan.md` (enumerate the Go suites, spell out the fake TTY/signals adapters, and capture any Node platform constraints) so Phase 4 starts with concrete tasks.
+  2. Begin translating the Go tty specs (e.g., `tty_test.go`, `tty_unix_test.go`) into `packages/tests/src/tty`, adding the fake streams needed to simulate Unix and Windows terminals under Vitest.
+  3. Follow with the Go signals/input reader suites (e.g., `signals_unix_test.go`, `inputreader_other_test.go`) so shutdown semantics are covered by TypeScript tests before we edit production code.
+- **Blockers/Risks:**
+  - Native Windows binding implementation (Node-API addon + WriteConsoleInput validation) still needs a Windows-capable toolchain; OUT OF SCOPE FOR LOOP until that environment exists.
 
 ## 2025-11-14 (Session 60)
 - **Session Goals:** Finish migrating the remaining Windows-facing specs to the loader hooks and prove fatal binding failures bubble through `Program.run()`.

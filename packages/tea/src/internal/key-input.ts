@@ -379,6 +379,12 @@ const parseX10MouseEvent = (buffer: Uint8Array): MouseMsg => {
   return event;
 };
 
+export const parseSGRMouseEventForTests = (buffer: Uint8Array): MouseMsg =>
+  parseSGRMouseEvent(buffer);
+
+export const parseX10MouseEventForTests = (buffer: Uint8Array): MouseMsg =>
+  parseX10MouseEvent(buffer);
+
 const createMouseEvent = (): MouseMsg => ({
   X: 0,
   Y: 0,
