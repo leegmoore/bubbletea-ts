@@ -8,6 +8,19 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
 - End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
 
+## 2025-11-14 (Session 48)
+- **Session Goals:** Port the Go `ReleaseTerminal`/`RestoreTerminal` specs into Vitest and wire the runtime through that lifecycle (tests-first) so future console/tty work can build on a faithful suspension pathway.
+- **Completed:**
+  - Added `packages/tests/src/utils/fake-tty.ts` plus new Vitest cases covering the release/restore lifecycle, input reader pausing, and renderer state restoration; confirmed they failed against the old runtime.
+  - Implemented `Program.releaseTerminal()/restoreTerminal()` with the new input-reader pause helper, window-size re-emission, and renderer state capture/reapply logic (alt screen, bracketed paste, focus reporting) while keeping tests-first discipline.
+  - Removed the automatic bracketed-paste enablement from `StandardRenderer.start()`, added the window-size helper, and reran `pnpm vitest run packages/tests/src/program/tea.test.ts packages/tests/src/tty/tty.test.ts` to keep all suites green.
+- **What’s Next (priority order):**
+  1. Extend the Windows console harness/fake binding to cover resize, mouse, and pseudo-console record handling so the Go `signals_windows.go` and `inputreader_windows.go` suites can be translated.
+  2. Prototype the real Windows VT/pseudo-console binding (node-addon-api vs ffi) once the fake harness surface is stable and documented.
+  3. Document the ReleaseTerminal/RestoreTerminal expectations for future `Suspend`/`Release` command handling so downstream work (exec integration, signal handling) knows how to hook in.
+- **Blockers/Risks:**
+  - Native Windows binding selection remains open, so VT toggles/resize/mouse behaviour cannot yet be validated on real consoles; keep tracking in the harness plan.
+
 ## 2025-11-14 (Session 47)
 - **Session Goals:** Codify the Windows console binding interface plus fake harness so Windows-specific tty/input specs can compile (tests-first).
 - **Completed:**

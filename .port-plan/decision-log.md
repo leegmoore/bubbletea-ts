@@ -50,6 +50,7 @@ Capture durable architectural/process choices. Use the table below for quick ref
 | D-043 | 2025-11-14 | TTY raw-mode strategy | Programs now toggle Node’s `setRawMode` only when a TTY input is paired with an active renderer, capture the initial `isRaw` flag, and restore the original state during shutdown so TypeScript mirrors Go’s `tty.go` semantics without breaking custom inputs. | Final |
 | D-044 | 2025-11-14 | Cancelable input reader abstraction | Added `createCancelableInputReader` as a cancellable async iterable layered on the shared ANSI input queue so future Program wiring can mirror Go’s cancelreader semantics (including InputReaderCanceledError propagation) before we add Windows-specific adapters. | Final |
 | D-045 | 2025-11-14 | Windows console binding injection | Windows-specific terminal work will flow through an injectable `WindowsConsoleBinding`, enabling Vitest to drive fake bindings while production lazily loads a native/FFI shim for pseudo-console, resize, and input handling. | Final |
+| D-046 | 2025-11-14 | ReleaseTerminal lifecycle parity | `Program.releaseTerminal()`/`restoreTerminal()` pause the cancelable reader without destroying stdin, capture the renderer’s alt-screen/bracketed/focus state, emit a fresh window size, and restart the renderer/input stack so suspension mirrors Go’s lifecycle. | Final |
 
 ## Pending / Future Considerations
 - Terminal adapter strategy (pure Node APIs vs. `node-pty` dependency) — evaluate during Phase 1 research.

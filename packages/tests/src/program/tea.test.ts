@@ -1,5 +1,5 @@
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   Batch,
@@ -24,12 +24,15 @@ import {
   WithContext,
   WithFilter,
   WithInput,
+  WithAltScreen,
   WithOutput,
+  WithReportFocus,
   keyToString
 } from '@bubbletea/tea';
 import { InputReaderCanceledError } from '@bubbletea/tea/internal';
 
 import { controllerWithTimeout, createDeferred, sleep, waitFor, withTimeout } from '../utils/async';
+import { FakeTtyInput, FakeTtyOutput } from '../utils/fake-tty';
 
 type CtxImplodeMsg = { type: 'ctxImplode'; cancel: () => void };
 type IncrementMsg = { type: 'increment' };
@@ -1616,5 +1619,114 @@ describe('Program lifecycle (tea_test.go parity)', () => {
         expect(msg?.body).toBe(expected);
       });
     }
+  });
+
+  describe('releaseTerminal / restoreTerminal', () => {
+    it('releases and restores the tty/renderer state without stopping the program', async () => {
+      const input = new FakeTtyInput(false);
+      const output = new FakeTtyOutput();
+      const { program } = createProgram(
+        new TestModel(),
+        WithInput(input),
+        WithOutput(output),
+        WithAltScreen(),
+        WithReportFocus()
+      );
+
+      const startSpy = vi.spyOn(program.renderer, 'start');
+      const stopSpy = vi.spyOn(program.renderer, 'stop');
+      const runPromise = awaitRun(program);
+
+      await waitFor(() => input.rawModeCalls.includes(true), {
+        timeoutMs: 500,
+        errorMessage: 'program never entered raw mode'
+      });
+      await waitFor(() => program.renderer.altScreen(), {
+        timeoutMs: 500,
+        errorMessage: 'renderer never entered alt screen'
+      });
+      await waitFor(() => program.renderer.reportFocus(), {
+        timeoutMs: 500,
+        errorMessage: 'renderer never enabled focus reporting'
+      });
+
+      const initialStartCalls = startSpy.mock.calls.length;
+
+      program.releaseTerminal();
+
+      expect(stopSpy).toHaveBeenCalledTimes(1);
+      expect(program.ignoreSignals).toBe(true);
+      expect(program.renderer.altScreen()).toBe(false);
+      expect(program.renderer.bracketedPasteActive()).toBe(false);
+      expect(program.renderer.reportFocus()).toBe(false);
+      expect(input.rawModeCalls.at(-1)).toBe(false);
+
+      program.restoreTerminal();
+
+      await waitFor(() => input.rawModeCalls.at(-1) === true, {
+        timeoutMs: 500,
+        errorMessage: 'raw mode was not re-enabled after restore'
+      });
+
+      expect(program.ignoreSignals).toBe(false);
+      expect(program.renderer.altScreen()).toBe(true);
+      expect(program.renderer.bracketedPasteActive()).toBe(true);
+      expect(program.renderer.reportFocus()).toBe(true);
+      expect(startSpy.mock.calls.length).toBe(initialStartCalls + 1);
+
+      input.end('q');
+      const result = await runPromise;
+      expect(result.err).toBeNull();
+    });
+
+    it('keeps disabled renderer modes off and resumes the input reader after restoring the terminal', async () => {
+      const input = new FakeTtyInput(false);
+      const output = new FakeTtyOutput();
+      const { program } = createProgram(new TestModel(), WithInput(input), WithOutput(output));
+      const runPromise = awaitRun(program);
+
+      await waitFor(() => input.rawModeCalls.includes(true), {
+        timeoutMs: 500,
+        errorMessage: 'program never entered raw mode'
+      });
+      await waitFor(() => input.listenerCount('data') > 0, {
+        timeoutMs: 500,
+        errorMessage: 'input listeners were never attached'
+      });
+
+      await sendMessage(program, { type: 'bubbletea/disable-bracketed-paste' });
+      await sendMessage(program, { type: 'bubbletea/enable-report-focus' });
+      await waitFor(() => program.renderer.reportFocus(), {
+        timeoutMs: 500,
+        errorMessage: 'focus reporting never enabled'
+      });
+      await sendMessage(program, { type: 'bubbletea/disable-report-focus' });
+      await waitFor(() => !program.renderer.reportFocus(), {
+        timeoutMs: 500,
+        errorMessage: 'focus reporting never disabled'
+      });
+
+      program.releaseTerminal();
+
+      await waitFor(() => input.listenerCount('data') === 0, {
+        timeoutMs: 500,
+        errorMessage: 'input listeners were not removed when releasing the terminal'
+      });
+      expect(program.renderer.bracketedPasteActive()).toBe(false);
+      expect(program.renderer.reportFocus()).toBe(false);
+
+      program.restoreTerminal();
+
+      await waitFor(() => input.listenerCount('data') > 0, {
+        timeoutMs: 500,
+        errorMessage: 'input listeners were not reattached after restoring the terminal'
+      });
+      expect(program.renderer.bracketedPasteActive()).toBe(false);
+      expect(program.renderer.reportFocus()).toBe(false);
+
+      input.end('q');
+      const result = await runPromise;
+      expect(result.err).toBeNull();
+    });
   });
 });

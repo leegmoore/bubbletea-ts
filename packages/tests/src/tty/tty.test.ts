@@ -13,39 +13,7 @@ import {
 import * as ttyInternals from '@bubbletea/tea/internal';
 
 import { waitFor, withTimeout } from '../utils/async';
-
-class FakeTtyInput extends PassThrough {
-  public isTTY = true;
-  public isRaw: boolean;
-  public readonly rawModeCalls: boolean[] = [];
-
-  constructor(initialRaw = false) {
-    super();
-    this.isRaw = initialRaw;
-  }
-
-  setRawMode(next: boolean): this {
-    this.isRaw = next;
-    this.rawModeCalls.push(next);
-    return this;
-  }
-}
-
-class NonTtyInput extends PassThrough {
-  public isTTY = false;
-  public readonly rawModeCalls: boolean[] = [];
-
-  setRawMode(next: boolean): this {
-    this.rawModeCalls.push(next);
-    return this;
-  }
-}
-
-class FakeTtyOutput extends PassThrough {
-  public isTTY = true;
-  public columns = 80;
-  public rows = 24;
-}
+import { FakeTtyInput, FakeTtyOutput, NonTtyInput } from '../utils/fake-tty';
 
 const awaitRun = (program: Program, timeoutMs = 3000) => withTimeout(program.run(), timeoutMs);
 

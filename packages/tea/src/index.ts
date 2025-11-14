@@ -277,7 +277,6 @@ class StandardRenderer implements Renderer {
     this.running = true;
     this.repaint();
     this.hideCursor();
-    this.enableBracketedPaste();
     this.startTicker();
   }
 
@@ -906,9 +905,14 @@ export class Program {
   private resultErr: Error | null = null;
   private externalAbortCleanup?: () => void;
   private inputCleanup?: () => void;
+  private inputPause?: () => void;
   private inputReader?: CancelableInputReader;
   private rawInputCleanup?: () => void;
   private resizeCleanup?: () => void;
+  private terminalReleased = false;
+  private releasedAltScreen = false;
+  private releasedBracketedPaste = false;
+  private releasedReportFocus = false;
 
   constructor(public model: Model | null) {
     this.renderer = new StandardRenderer(() => this.output, () => this.fps);
@@ -982,6 +986,51 @@ export class Program {
     this.finish(finalErr);
   }
 
+  releaseTerminal(): void {
+    if (!this.isRunning() || this.terminalReleased) {
+      return;
+    }
+    this.ignoreSignals = true;
+    this.pauseInput();
+    this.renderer.stop();
+    this.releasedAltScreen = this.renderer.altScreen();
+    this.releasedBracketedPaste = this.renderer.bracketedPasteActive();
+    this.releasedReportFocus = this.renderer.reportFocus();
+    this.restoreTerminalState();
+    this.terminalReleased = true;
+  }
+
+  restoreTerminal(): void {
+    if (!this.isRunning() || !this.terminalReleased) {
+      return;
+    }
+    this.ignoreSignals = false;
+    this.setupTerminalInput();
+    this.setupInput();
+    if (this.releasedAltScreen) {
+      this.renderer.enterAltScreen();
+    } else {
+      this.renderer.repaint();
+    }
+    this.renderer.start();
+    if (this.releasedBracketedPaste) {
+      this.renderer.enableBracketedPaste();
+    } else {
+      this.renderer.disableBracketedPaste();
+    }
+    if (this.releasedReportFocus) {
+      this.renderer.enableReportFocus();
+    } else {
+      this.renderer.disableReportFocus();
+    }
+    this.emitWindowSizeFrom(this.output);
+    this.render();
+    this.terminalReleased = false;
+    this.releasedAltScreen = false;
+    this.releasedBracketedPaste = false;
+    this.releasedReportFocus = false;
+  }
+
   println(...args: unknown[]): void {
     this.dispatchPrintLine(formatPrintArgs(args));
   }
@@ -999,6 +1048,10 @@ export class Program {
     this.messageQueue = [];
     this.processingQueue = false;
     this.resultErr = null;
+    this.terminalReleased = false;
+    this.releasedAltScreen = false;
+    this.releasedBracketedPaste = false;
+    this.releasedReportFocus = false;
     this.bindExternalContext();
     this.state = 'running';
     this.markStarted();
@@ -1155,12 +1208,8 @@ export class Program {
     }).catch(handleReadError);
 
     let cleaned = false;
-    this.inputCleanup = () => {
-      if (cleaned) {
-        return;
-      }
-      cleaned = true;
-      reader.cancel();
+
+    const closeReader = () => {
       reader.close();
       if (!controller.signal.aborted) {
         controller.abort();
@@ -1169,12 +1218,53 @@ export class Program {
         this.inputReader = undefined;
       }
     };
+
+    const cleanupFn = () => {
+      if (cleaned) {
+        return;
+      }
+      cleaned = true;
+      reader.cancel();
+      closeReader();
+      if (this.inputCleanup === cleanupFn) {
+        this.inputCleanup = undefined;
+      }
+      if (this.inputPause === pauseFn) {
+        this.inputPause = undefined;
+      }
+    };
+
+    const pauseFn = () => {
+      if (cleaned) {
+        return;
+      }
+      cleaned = true;
+      closeReader();
+      if (this.inputCleanup === cleanupFn) {
+        this.inputCleanup = undefined;
+      }
+      if (this.inputPause === pauseFn) {
+        this.inputPause = undefined;
+      }
+    };
+
+    this.inputCleanup = cleanupFn;
+    this.inputPause = pauseFn;
   }
 
   private cleanupInput(): void {
     if (this.inputCleanup) {
       this.inputCleanup();
       this.inputCleanup = undefined;
+    }
+    this.inputPause = undefined;
+  }
+
+  private pauseInput(): void {
+    if (this.inputPause) {
+      const pause = this.inputPause;
+      this.inputPause = undefined;
+      pause();
     }
   }
 
@@ -1186,19 +1276,7 @@ export class Program {
     const output = this.output;
 
     const emitWindowSize = () => {
-      if (!this.isRunning() || !isWritableTty(output)) {
-        return;
-      }
-      const width = sanitizeDimension(output.columns);
-      const height = sanitizeDimension(output.rows);
-      if (width == null || height == null) {
-        return;
-      }
-      this.enqueueMsg({
-        type: 'bubbletea/window-size',
-        width,
-        height
-      });
+      this.emitWindowSizeFrom(output);
     };
 
     const onResize = () => {
@@ -1215,6 +1293,22 @@ export class Program {
         output.removeListener('resize', onResize);
       }
     };
+  }
+
+  private emitWindowSizeFrom(stream: NodeJS.WritableStream | null): void {
+    if (!this.isRunning() || !isWritableTty(stream)) {
+      return;
+    }
+    const width = sanitizeDimension(stream.columns);
+    const height = sanitizeDimension(stream.rows);
+    if (width == null || height == null) {
+      return;
+    }
+    this.enqueueMsg({
+      type: 'bubbletea/window-size',
+      width,
+      height
+    });
   }
 
   private cleanupResizeListener(): void {
@@ -1537,6 +1631,10 @@ export class Program {
     this.messageQueue.length = 0;
     this.processingQueue = false;
     this.stopRenderer(err);
+    this.terminalReleased = false;
+    this.releasedAltScreen = false;
+    this.releasedBracketedPaste = false;
+    this.releasedReportFocus = false;
     this.markStarted();
     this.state = 'stopped';
     this.finished.resolve();
