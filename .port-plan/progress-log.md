@@ -11,6 +11,18 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 54)
+- **Session Goals:** Convert the top Windows task into a concrete binding-loader plan so runtime work can proceed tests-first.
+- **Completed:**
+  - Authored `docs/windows-console-binding-loader.md`, detailing the Node-API addon vs `ffi-napi` fallback strategy, discovery order (env override → addon → FFI), error surfacing, and the Vitest coverage we need before touching production code.
+  - Logged decision **D-047** capturing the agreed loader approach so later sessions can treat it as the canonical plan.
+- **What’s Next (priority order):**
+  1. Outline the pseudo-console native binding implementation steps (entrypoints, Node-API surface area, build targets, CI strategy) so the next Windows session can start translating the Go spec.
+  2. Define the pnpm workspace shape for the addon/ffi shim (package names, build scripts, headers) and document how the Vitest harness will stub those modules.
+  3. Prototype the native Windows binding itself — OUT OF SCOPE FOR LOOP until we have a Windows toolchain.
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-14 (Session 53)
 - **Session Goals:** Lock down Windows release/restore semantics tests-first so runtime tweaks have a spec.
 - **Completed:**
