@@ -11,6 +11,21 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 58)
+- **Session Goals:** Translate the Windows binding loader spec into Vitest and wire a real loader that honors env overrides, addon/FFI selection, and test hooks.
+- **Completed:**
+  - Added `packages/tests/src/internal/windows-binding-loader.test.ts`, covering non-Windows bypass, `BUBBLETEA_WINDOWS_BINDING_PATH` overrides, addon caching, FFI opt-in, and fatal error surfacing via deterministic module loader overrides.
+  - Implemented `packages/tea/src/internal/windows/binding-loader.ts` with env-driven resolution, caching, `BubbleTeaWindowsBindingError`, and a test-only module resolver, then pointed `getWindowsConsoleBinding`/`setWindowsConsoleBindingForTests` at the new loader.
+  - Extended `packages/tea/package.json` exports so `@bubbletea/tea/internal/*` specifiers resolve in Vitest/ts-node without a build output, keeping workspace consumers happy.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/internal/windows-binding-loader.test.ts` to keep the new suite green.
+- **What’s Next (priority order):**
+  1. Update `docs/windows-console-binding-loader.md` (and cross-link troubleshooting sections) to reflect the implemented env flags, error text, and test helper APIs.
+  2. Translate the Windows console mode/runtime specs (e.g., `packages/tests/src/program/windows-console-mode.test.ts`) so Program-level VT/mouse toggles exercise the loader end-to-end.
+  3. Prototype the Node-API pseudo console binding on a Windows toolchain — OUT OF SCOPE FOR LOOP until a Windows dev environment is available.
+- **Blockers/Risks:**
+  - Native Windows binding implementation (Node-API addon + WriteConsoleInput harness validation) still needs a Windows-capable toolchain; keep flagged as OUT OF SCOPE FOR LOOP.
+  - Real `@bubbletea/windows-binding` / `@bubbletea/windows-binding-ffi` implementations remain stubbed, so runtime behaviour on actual Windows consoles still depends on fake bindings until those land.
+
 ## 2025-11-14 (Session 57)
 - **Session Goals:** Unlock KEY/MOUSE coverage in the Windows integration suite without waiting for the native addon by building a WriteConsoleInput-backed harness the specs can use immediately.
 - **Completed:**

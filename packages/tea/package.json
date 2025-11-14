@@ -11,6 +11,10 @@
     "./internal": {
       "types": "./src/internal/index.ts",
       "import": "./src/internal/index.ts"
+    },
+    "./internal/*": {
+      "types": "./src/internal/*.ts",
+      "import": "./src/internal/*.ts"
     }
   },
   "main": "src/index.ts",

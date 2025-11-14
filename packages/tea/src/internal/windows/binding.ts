@@ -1,3 +1,5 @@
+import { ensureWindowsConsoleBindingLoaded, setWindowsConsoleBindingOverride } from './binding-loader';
+
 export type WindowsHandle = number;
 
 export interface WindowsPoint {
@@ -79,22 +81,17 @@ export interface WindowsConsoleBinding {
   closePseudoConsole(pseudoConsole: WindowsPseudoConsoleHandle): void;
 }
 
-let activeBinding: WindowsConsoleBinding | null = null;
-
 /**
- * Returns the currently registered Windows console binding, if any.
+ * Resolves (and caches) the active Windows console binding for the current platform.
  */
-export const getWindowsConsoleBinding = (): WindowsConsoleBinding | null => activeBinding;
+export const getWindowsConsoleBinding = (): WindowsConsoleBinding | null =>
+  ensureWindowsConsoleBindingLoaded();
 
 /**
- * Installs a new Windows console binding for tests.
- *
- * Production builds will replace this function with a loader that
- * dynamically resolves the native binding. Until then, tests can
- * inject a fake binding to exercise runtime logic.
+ * Installs a fake binding for tests. Pass `null` to clear the override.
  */
 export const setWindowsConsoleBindingForTests = (
   binding: WindowsConsoleBinding | null
 ): void => {
-  activeBinding = binding;
+  setWindowsConsoleBindingOverride(binding);
 };
