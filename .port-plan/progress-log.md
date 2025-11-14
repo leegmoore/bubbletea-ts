@@ -8,6 +8,23 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
 - End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
 
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
+
+## 2025-11-14 (Session 51)
+- **Session Goals:** Translate the Go `inputreader_windows.go`/`key_windows.go` behaviours into Vitest (tests-first) and wire the TypeScript runtime so Windows key/mouse records flow through the pseudo-console binding.
+- **Completed:**
+  - Added `packages/tests/src/input/windows-console-input.test.ts` to exercise Windows key events, repeat counts, modifier handling, mouse enable/disable toggles, wheel + motion events, and the fake binding queues.
+  - Introduced `packages/tea/src/internal/windows/input.ts`, mirroring the Go key/mouse parsing logic (virtual-key mapping, control-key decoding, mouse button state transitions, wheel delta handling) so binding records translate into Bubble Tea `KeyMsg`/`MouseMsg`.
+  - Extended `Program` with Windows mouse-tracking state, hooked the pseudo-console reader to feed key/mouse records, and gated mouse delivery based on the renderer options so runtime behaviour matches the newly translated specs.
+  - Ran `pnpm vitest run packages/tests/src/input/windows-console-input.test.ts` and `pnpm vitest run packages/tests/src/signals/windows-resize.test.ts` to keep the new suites and existing resize coverage green.
+- **What’s Next (priority order):**
+  1. Flesh out the Windows input/resize documentation (ReleaseTerminal/RestoreTerminal contract, pseudo-console lifecycle, VT/mouse toggles) so downstream suspend/exec/signal work has a written reference.
+  2. Teach the runtime to flip the real console mode bits (`ENABLE_WINDOW_INPUT`, `ENABLE_EXTENDED_FLAGS`, `ENABLE_MOUSE_INPUT`) in tandem with the renderer mouse commands and document the failure modes before the native binding lands.
+  3. Prototype the native Windows binding (node-addon-api vs FFI) once the fake harness-backed suites cover resize + input; remains OUT OF SCOPE FOR LOOP until we can build on a Windows-capable environment.
+- **Blockers/Risks:**
+  - Native Windows binding implementation still requires a Windows-capable toolchain; keep tracking as OUT OF SCOPE FOR LOOP until the platform tooling is available.
+
 ## 2025-11-14 (Session 50)
 - **Session Goals:** Port the Windows resize spec into Vitest (tests-first) and teach the runtime to source `WindowSizeMsg` from the console binding rather than Unix signals.
 - **Completed:**

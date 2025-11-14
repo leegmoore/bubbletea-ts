@@ -14,7 +14,14 @@ import {
   openInputTTY,
   readAnsiInputs
 } from './internal';
-import type { CancelableInputReader, WindowsInputRecord } from './internal';
+import type {
+  CancelableInputReader,
+  WindowsInputRecord,
+  WindowsKeyInputRecord,
+  WindowsMouseInputRecord,
+  WindowsWindowBufferSizeRecord
+} from './internal';
+import { translateWindowsKeyRecord, translateWindowsMouseRecord } from './internal/windows/input';
 
 export * from './key';
 export * from './mouse';
@@ -917,6 +924,8 @@ export class Program {
   private releasedAltScreen = false;
   private releasedBracketedPaste = false;
   private releasedReportFocus = false;
+  private windowsMouseTracking: 'none' | 'cell' | 'all' = 'none';
+  private windowsMouseButtonState = 0;
 
   constructor(public model: Model | null) {
     this.renderer = new StandardRenderer(() => this.output, () => this.fps);
@@ -1344,6 +1353,8 @@ export class Program {
       return null;
     }
 
+    this.windowsMouseButtonState = 0;
+
     const cleanup = () => {
       if (disposed) {
         return;
@@ -1399,9 +1410,25 @@ export class Program {
   }
 
   private handleWindowsConsoleRecord(record: WindowsInputRecord): void {
-    if (record.type !== 'window-buffer-size') {
+    if (!this.isRunning()) {
       return;
     }
+    switch (record.type) {
+      case 'window-buffer-size':
+        this.handleWindowsWindowSizeRecord(record);
+        break;
+      case 'key':
+        this.handleWindowsKeyRecord(record);
+        break;
+      case 'mouse':
+        this.handleWindowsMouseRecord(record);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private handleWindowsWindowSizeRecord(record: WindowsWindowBufferSizeRecord): void {
     const width = sanitizeDimension(record.size.columns);
     const height = sanitizeDimension(record.size.rows);
     if (width == null || height == null) {
@@ -1412,6 +1439,28 @@ export class Program {
       width,
       height
     });
+  }
+
+  private handleWindowsKeyRecord(record: WindowsKeyInputRecord): void {
+    const messages = translateWindowsKeyRecord(record);
+    if (messages.length === 0) {
+      return;
+    }
+    for (const msg of messages) {
+      this.enqueueMsg(msg);
+    }
+  }
+
+  private handleWindowsMouseRecord(record: WindowsMouseInputRecord): void {
+    const previousState = this.windowsMouseButtonState;
+    if (!this.isWindowsMouseTrackingEnabled()) {
+      return;
+    }
+    const { msg, nextButtonState } = translateWindowsMouseRecord(record, previousState);
+    this.windowsMouseButtonState = nextButtonState;
+    if (msg) {
+      this.enqueueMsg(msg);
+    }
   }
 
   private cleanupResizeListener(): void {
@@ -1435,9 +1484,11 @@ export class Program {
     if (this.startupOptions.has(StartupFlag.MouseCellMotion)) {
       this.renderer.enableMouseCellMotion();
       this.renderer.enableMouseSGRMode();
+      this.setWindowsMouseTracking('cell');
     } else if (this.startupOptions.has(StartupFlag.MouseAllMotion)) {
       this.renderer.enableMouseAllMotion();
       this.renderer.enableMouseSGRMode();
+      this.setWindowsMouseTracking('all');
     }
 
     if (this.startupOptions.has(StartupFlag.ReportFocus)) {
@@ -1655,10 +1706,12 @@ export class Program {
       case 'bubbletea/enable-mouse-cell-motion':
         this.renderer.enableMouseCellMotion();
         this.renderer.enableMouseSGRMode();
+        this.setWindowsMouseTracking('cell');
         break;
       case 'bubbletea/enable-mouse-all-motion':
         this.renderer.enableMouseAllMotion();
         this.renderer.enableMouseSGRMode();
+        this.setWindowsMouseTracking('all');
         break;
       case 'bubbletea/disable-mouse':
         this.disableMouseModes();
@@ -1690,6 +1743,18 @@ export class Program {
     this.renderer.disableMouseCellMotion();
     this.renderer.disableMouseAllMotion();
     this.renderer.disableMouseSGRMode();
+    this.setWindowsMouseTracking('none');
+  }
+
+  private setWindowsMouseTracking(mode: 'none' | 'cell' | 'all'): void {
+    if (this.windowsMouseTracking === mode) {
+      return;
+    }
+    this.windowsMouseTracking = mode;
+  }
+
+  private isWindowsMouseTrackingEnabled(): boolean {
+    return this.windowsMouseTracking !== 'none';
   }
 
   private stopRenderer(err: Error | null): void {
