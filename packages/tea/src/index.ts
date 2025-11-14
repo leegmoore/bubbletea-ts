@@ -1397,7 +1397,14 @@ export class Program {
       return null;
     }
 
-    const binding = getWindowsConsoleBinding();
+    let binding: ReturnType<typeof getWindowsConsoleBinding>;
+    try {
+      binding = getWindowsConsoleBinding();
+    } catch (error) {
+      this.handlePanic(error);
+      return null;
+    }
+
     if (!binding) {
       return null;
     }
@@ -1893,34 +1900,37 @@ export class Program {
     this.restoreRawInput();
   }
 
+  private resetWindowsConsoleContext(resetState: boolean): void {
+    this.windowsConsolePrepared = false;
+    if (resetState) {
+      this.windowsConsoleInputHandle = null;
+      this.windowsConsoleOriginalMode = null;
+    }
+  }
+
   private restoreWindowsConsoleMode(resetState: boolean): void {
     if (!isWindowsPlatform()) {
-      this.windowsConsolePrepared = false;
-      if (resetState) {
-        this.windowsConsoleInputHandle = null;
-        this.windowsConsoleOriginalMode = null;
-      }
+      this.resetWindowsConsoleContext(resetState);
       return;
     }
 
-    const binding = getWindowsConsoleBinding();
+    let binding: ReturnType<typeof getWindowsConsoleBinding>;
+    try {
+      binding = getWindowsConsoleBinding();
+    } catch {
+      this.resetWindowsConsoleContext(resetState);
+      return;
+    }
+
     if (!binding) {
-      this.windowsConsolePrepared = false;
-      if (resetState) {
-        this.windowsConsoleInputHandle = null;
-        this.windowsConsoleOriginalMode = null;
-      }
+      this.resetWindowsConsoleContext(resetState);
       return;
     }
 
     const handle = this.windowsConsoleInputHandle;
     const originalMode = this.windowsConsoleOriginalMode;
     if (handle == null || originalMode == null) {
-      this.windowsConsolePrepared = false;
-      if (resetState) {
-        this.windowsConsoleInputHandle = null;
-        this.windowsConsoleOriginalMode = null;
-      }
+      this.resetWindowsConsoleContext(resetState);
       return;
     }
 
@@ -1929,11 +1939,7 @@ export class Program {
     } catch {
       // Ignore restore failures; the program is tearing down regardless.
     } finally {
-      this.windowsConsolePrepared = false;
-      if (resetState) {
-        this.windowsConsoleInputHandle = null;
-        this.windowsConsoleOriginalMode = null;
-      }
+      this.resetWindowsConsoleContext(resetState);
     }
   }
 

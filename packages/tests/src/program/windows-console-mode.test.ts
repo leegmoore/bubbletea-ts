@@ -1,13 +1,15 @@
 import { createRequire } from 'node:module';
 import { PassThrough } from 'node:stream';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Model, Msg, Program } from '@bubbletea/tea';
 import {
   DisableMouse,
   EnableMouseAllMotion,
   EnableMouseCellMotion,
+  ProgramKilledError,
+  ProgramPanicError,
   NewProgram,
   WithInput,
   WithMouseAllMotion,
@@ -19,6 +21,7 @@ import {
   WINDOWS_ENABLE_WINDOW_INPUT
 } from '@bubbletea/tea/internal';
 import {
+  BubbleTeaWindowsBindingError,
   resetWindowsConsoleBindingLoaderForTests,
   setWindowsBindingModuleLoaderForTests
 } from '@bubbletea/tea/internal/windows/binding-loader';
@@ -118,6 +121,48 @@ afterEach(() => {
   activeBindingFactory = null;
   resetWindowsConsoleBindingLoaderForTests();
   setWindowsBindingModuleLoaderForTests(null);
+});
+
+describe('Windows console binding loader failures', () => {
+  it('surfaces BubbleTeaWindowsBindingError via Program.run()', async () => {
+    const platformSpy = mockWindowsPlatform();
+    const previousAllowFfi = process.env.BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI;
+    process.env.BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI = '1';
+    resetWindowsConsoleBindingLoaderForTests();
+    setWindowsBindingModuleLoaderForTests((specifier) => {
+      if (specifier === '@bubbletea/windows-binding' || specifier === '@bubbletea/windows-binding-ffi') {
+        throw new Error(`module not found: ${specifier}`);
+      }
+      return nativeRequire(specifier);
+    });
+
+    try {
+      const program = NewProgram(
+        new IdleModel(),
+        WithInput(new FakeWindowsTtyInput()),
+        WithOutput(new FakeWindowsTtyOutput())
+      );
+      const result = await awaitRun(program);
+
+      expect(result.err).toBeInstanceOf(ProgramKilledError);
+      const killErr = result.err as ProgramKilledError;
+      expect(killErr.cause).toBeInstanceOf(ProgramPanicError);
+      const panicErr = killErr.cause as ProgramPanicError;
+      expect(panicErr.cause).toBeInstanceOf(BubbleTeaWindowsBindingError);
+      const bindingError = panicErr.cause as BubbleTeaWindowsBindingError;
+      expect(bindingError.attempts).toEqual([
+        expect.objectContaining({ kind: 'addon', specifier: '@bubbletea/windows-binding' }),
+        expect.objectContaining({ kind: 'ffi', specifier: '@bubbletea/windows-binding-ffi' })
+      ]);
+    } finally {
+      platformSpy.mockRestore();
+      if (previousAllowFfi === undefined) {
+        delete process.env.BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI;
+      } else {
+        process.env.BUBBLETEA_WINDOWS_BINDING_ALLOW_FFI = previousAllowFfi;
+      }
+    }
+  });
 });
 
 describe('Windows console mode flags', () => {

@@ -1,6 +1,7 @@
+import { createRequire } from 'node:module';
 import { PassThrough } from 'node:stream';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { KeyMsg, Model, Msg, MouseMsg, Program } from '@bubbletea/tea';
 import {
@@ -17,7 +18,10 @@ import {
   WithMouseCellMotion,
   WithOutput
 } from '@bubbletea/tea';
-import { setWindowsConsoleBindingForTests } from '@bubbletea/tea/internal';
+import {
+  resetWindowsConsoleBindingLoaderForTests,
+  setWindowsBindingModuleLoaderForTests
+} from '@bubbletea/tea/internal/windows/binding-loader';
 
 import { sleep, waitFor, withTimeout } from '../utils/async';
 import { FakeWindowsConsoleBinding } from '../utils/windows-console-harness';
@@ -101,12 +105,30 @@ class MessageRecorder implements Model {
   }
 }
 
+const nativeRequire = createRequire(import.meta.url);
+
 const mockWindowsPlatform = () => vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
 
-const installFakeBinding = () => {
+let activeBindingFactory: (() => FakeWindowsConsoleBinding) | null = null;
+
+const installLoaderBinding = (): FakeWindowsConsoleBinding => {
   const binding = new FakeWindowsConsoleBinding();
-  setWindowsConsoleBindingForTests(binding);
+  activeBindingFactory = () => binding;
   return binding;
+};
+
+const installModuleResolver = () => {
+  setWindowsBindingModuleLoaderForTests((specifier) => {
+    if (specifier === '@bubbletea/windows-binding' || specifier === '@bubbletea/windows-binding-ffi') {
+      if (!activeBindingFactory) {
+        throw new Error('Test Windows binding factory not installed');
+      }
+      return {
+        createWindowsConsoleBinding: activeBindingFactory
+      } satisfies Record<string, unknown>;
+    }
+    return nativeRequire(specifier);
+  });
 };
 
 const waitForPseudoHandles = async (binding: FakeWindowsConsoleBinding) => {
@@ -135,14 +157,22 @@ const collectMouseMsgs = (recorder: MessageRecorder): MouseMsg[] =>
 const readWindowsMouseMode = (program: Program): string | undefined =>
   (program as unknown as { windowsMouseTracking?: string }).windowsMouseTracking;
 
+beforeEach(() => {
+  activeBindingFactory = null;
+  resetWindowsConsoleBindingLoaderForTests();
+  installModuleResolver();
+});
+
 afterEach(() => {
-  setWindowsConsoleBindingForTests(null);
+  activeBindingFactory = null;
+  resetWindowsConsoleBindingLoaderForTests();
+  setWindowsBindingModuleLoaderForTests(null);
 });
 
 describe('Windows console key input', () => {
   it('emits KeyMsg entries for Windows key records with repeat counts and modifiers', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const recorder = new MessageRecorder();
     const input = new FakeWindowsTtyInput(100);
     const output = new FakeWindowsTtyOutput(120, 30, 101);
@@ -180,7 +210,7 @@ describe('Windows console key input', () => {
 
   it('maps ctrl/shift combinations and ignores key-up + shift-only records', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const recorder = new MessageRecorder();
     const program = NewProgram(recorder, WithInput(new FakeWindowsTtyInput()), WithOutput(new FakeWindowsTtyOutput()));
     const runPromise = awaitRun(program);
@@ -215,7 +245,7 @@ describe('Windows console key input', () => {
 describe('Windows console mouse input', () => {
   it('delivers mouse events only when mouse tracking is enabled and stops when disabled', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const recorder = new MessageRecorder();
     const program = NewProgram(recorder, WithInput(new FakeWindowsTtyInput()), WithOutput(new FakeWindowsTtyOutput()));
     const runPromise = awaitRun(program);
@@ -270,7 +300,7 @@ describe('Windows console mouse input', () => {
 
   it('translates wheel and motion events with modifier flags', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const recorder = new MessageRecorder();
     const program = NewProgram(
       recorder,

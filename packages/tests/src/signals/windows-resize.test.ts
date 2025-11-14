@@ -1,10 +1,14 @@
+import { createRequire } from 'node:module';
 import { PassThrough } from 'node:stream';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Cmd, Model, Msg, Program, WindowSizeMsg } from '@bubbletea/tea';
 import { NewProgram, WithInput, WithOutput } from '@bubbletea/tea';
-import { setWindowsConsoleBindingForTests } from '@bubbletea/tea/internal';
+import {
+  resetWindowsConsoleBindingLoaderForTests,
+  setWindowsBindingModuleLoaderForTests
+} from '@bubbletea/tea/internal/windows/binding-loader';
 
 import { waitFor, withTimeout } from '../utils/async';
 import { FakeWindowsConsoleBinding } from '../utils/windows-console-harness';
@@ -50,12 +54,30 @@ class FakeWindowsTtyOutput extends PassThrough {
   }
 }
 
+const nativeRequire = createRequire(import.meta.url);
+
 const mockWindowsPlatform = () => vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
 
-const installFakeBinding = () => {
+let activeBindingFactory: (() => FakeWindowsConsoleBinding) | null = null;
+
+const installLoaderBinding = (): FakeWindowsConsoleBinding => {
   const binding = new FakeWindowsConsoleBinding();
-  setWindowsConsoleBindingForTests(binding);
+  activeBindingFactory = () => binding;
   return binding;
+};
+
+const installModuleResolver = () => {
+  setWindowsBindingModuleLoaderForTests((specifier) => {
+    if (specifier === '@bubbletea/windows-binding' || specifier === '@bubbletea/windows-binding-ffi') {
+      if (!activeBindingFactory) {
+        throw new Error('Test Windows binding factory not installed');
+      }
+      return {
+        createWindowsConsoleBinding: activeBindingFactory
+      } satisfies Record<string, unknown>;
+    }
+    return nativeRequire(specifier);
+  });
 };
 
 const createProgram = (
@@ -80,14 +102,22 @@ const expectGracefulExit = async (result: Awaited<ReturnType<Program['run']>>) =
   expect(result.err).toBeNull();
 };
 
+beforeEach(() => {
+  activeBindingFactory = null;
+  resetWindowsConsoleBindingLoaderForTests();
+  installModuleResolver();
+});
+
 afterEach(() => {
-  setWindowsConsoleBindingForTests(null);
+  activeBindingFactory = null;
+  resetWindowsConsoleBindingLoaderForTests();
+  setWindowsBindingModuleLoaderForTests(null);
 });
 
 describe('Windows console resize propagation', () => {
   it('delivers WindowSizeMsg entries for WINDOW_BUFFER_SIZE records', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const output = new FakeWindowsTtyOutput(91, 35);
     const { program, model } = createProgram(output);
     const runPromise = awaitRun(program);
@@ -120,7 +150,7 @@ describe('Windows console resize propagation', () => {
 
   it('tears down the pseudo console when the program stops', async () => {
     const platformSpy = mockWindowsPlatform();
-    const binding = installFakeBinding();
+    const binding = installLoaderBinding();
     const output = new FakeWindowsTtyOutput(80, 24);
     const { program } = createProgram(output);
     const runPromise = awaitRun(program);

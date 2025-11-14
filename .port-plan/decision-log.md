@@ -62,6 +62,7 @@ Capture durable architectural/process choices. Use the table below for quick ref
 | D-044 | 2025-11-14 | Cancelable input reader abstraction | Added `createCancelableInputReader` as a cancellable async iterable layered on the shared ANSI input queue so future Program wiring can mirror Go’s cancelreader semantics (including InputReaderCanceledError propagation) before we add Windows-specific adapters. | Final |
 | D-045 | 2025-11-14 | Windows console binding injection | Windows-specific terminal work will flow through an injectable `WindowsConsoleBinding`, enabling Vitest to drive fake bindings while production lazily loads a native/FFI shim for pseudo-console, resize, and input handling. | Final |
 | D-046 | 2025-11-14 | ReleaseTerminal lifecycle parity | `Program.releaseTerminal()`/`restoreTerminal()` pause the cancelable reader without destroying stdin, capture the renderer’s alt-screen/bracketed/focus state, emit a fresh window size, and restart the renderer/input stack so suspension mirrors Go’s lifecycle. | Final |
+| D-047 | 2025-11-14 | Windows binding failure handling | Program teardown and resize wiring now treat `BubbleTeaWindowsBindingError` as fatal-but-graceful (clearing console state and skipping pseudo consoles) so `Program.run()` resolves with a `ProgramKilledError` whose root cause preserves the original binding failure instead of rethrowing mid-cleanup. | Final |
 
 ## Pending / Future Considerations
 - Terminal adapter strategy (pure Node APIs vs. `node-pty` dependency) — evaluate during Phase 1 research.

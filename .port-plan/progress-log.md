@@ -11,6 +11,19 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - **Blockers/Risks:**
   - Native Windows binding implementation still requires a Windows-capable toolchain; track as OUT OF SCOPE FOR LOOP until tests/FFI scaffolding can run on that platform.
 
+## 2025-11-14 (Session 60)
+- **Session Goals:** Finish migrating the remaining Windows-facing specs to the loader hooks and prove fatal binding failures bubble through `Program.run()`.
+- **Completed:**
+  - Reworked `packages/tests/src/signals/windows-resize.test.ts` and `packages/tests/src/input/windows-console-input.test.ts` so they install fake bindings via `setWindowsBindingModuleLoaderForTests`/`resetWindowsConsoleBindingLoaderForTests`, guaranteeing resize, pseudo console, and input suites exercise the real loader instead of `setWindowsConsoleBindingForTests`.
+  - Added a Program-level regression spec in `packages/tests/src/program/windows-console-mode.test.ts` that asserts loader failures surface as `ProgramKilledError(cause=ProgramPanicError -> BubbleTeaWindowsBindingError)`, then hardened `packages/tea/src/index.ts` by guarding `restoreWindowsConsoleMode`/`setupWindowsResizeListener` with the new `resetWindowsConsoleContext()` helper so teardown no longer rethrows loader errors.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/program/windows-console-mode.test.ts src/signals/windows-resize.test.ts src/input/windows-console-input.test.ts` to keep the updated suites green.
+- **What’s Next (priority order):**
+  1. Start porting Go’s `key_test.go` into `packages/tests` (using the loader harness where needed) so keyboard semantics drive the next runtime work.
+  2. Follow with the translated `mouse_test.go`, ensuring the new loader harness covers motion/wheel coverage end-to-end.
+  3. Draft the tty/signal test translation plan described in `.port-plan/plan.md` so the next session can jump straight into those suites once key/mouse land.
+- **Blockers/Risks:**
+  - Native Windows binding implementation (Node-API addon + WriteConsoleInput validation) still needs a Windows-capable toolchain; keep flagged as OUT OF SCOPE FOR LOOP until that environment exists.
+
 ## 2025-11-14 (Session 59)
 - **Session Goals:** Document the shipping Windows binding loader and drive the Program-level Windows console tests through the real loader path instead of manual overrides.
 - **Completed:**
