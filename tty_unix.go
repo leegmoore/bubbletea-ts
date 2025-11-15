@@ -40,7 +40,7 @@ func openInputTTY() (*os.File, error) {
 const suspendSupported = true
 
 // Send SIGTSTP to the entire process group.
-func suspendProcess() {
+var suspendProcess = func() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGCONT)
 	_ = syscall.Kill(0, syscall.SIGTSTP)

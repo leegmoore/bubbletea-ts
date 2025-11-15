@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 55)
+- **Completed:**
+  - Authored `suspend_unix_test.go` with a fake renderer harness so `Program.suspend()` now asserts `ReleaseTerminal` stops the renderer, snapshots alt-screen/bracketed-paste/focus flags, drops `ignoreSignals` only after `RestoreTerminal()`, and queues `ResumeMsg`; reran `go test ./...` (green).
+  - Added `packages/tests/src/program/suspend.test.ts`, moved the suspend/resume specs out of `tea.test.ts`, rewired them to instantiate real programs via `NewProgram`, and kept the behaviour-driven helpers (`awaitRun`, `sendMessage`, `FakeTty*`).
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/program/suspend.test.ts` and `pnpm --filter @bubbletea/tests exec vitest run src/program/tea.test.ts` to ensure the relocated suite and existing lifecycle coverage stay green.
+- **What’s Next (priority order):**
+  1. Extend the Go suspend harness to assert `RestoreTerminal()` triggers a `checkResize` call (e.g., by wiring a fake `ttyOutput`) so the window-size refresh that Go performs after resume is explicitly covered.
+  2. Translate that new Go scenario into Vitest (either in `program/suspend.test.ts` or `signals/resize.test.ts`) and adjust the TypeScript runtime if needed so a `WindowSizeMsg` is guaranteed after suspend → resume cycles.
+- **Blockers/Risks:**
+  - Manual SIGTSTP/SIGCONT QA still requires an interactive shell and remains OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-15 (Session 54)
 - **Completed:**
   - Authored `signals_unix_test.go` with a PTY-backed harness covering initial window-size emission, SIGWINCH propagation, non-TTY short-circuits, and `ignoreSignals` gating, pulled in `github.com/creack/pty`, and ran `go test ./...`.

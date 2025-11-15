@@ -65,4 +65,4 @@ func openInputTTY() (*os.File, error) {
 
 const suspendSupported = false
 
-func suspendProcess() {}
+var suspendProcess = func() {}
