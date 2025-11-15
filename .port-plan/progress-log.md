@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 58)
+- **Completed:**
+  - Translated `tutorials/basics/main.go` into `packages/tests/src/integration/tutorials-basics.test.ts`, exercising window-title initialization, cursor movement, selection toggles, and quit behaviour via the fake TTY harness.
+  - Added full `SetWindowTitle` runtime support (message type, exported command, and Program renderer hook) so the tutorial spec drives the renderer’s `setWindowTitle` implementation rather than relying on manual testing.
+  - Re-ran `pnpm --filter @bubbletea/tests exec vitest run src/integration/tutorials-basics.test.ts src/program/tea.test.ts` to keep both the new integration suite and the broader program lifecycle coverage green.
+- **What’s Next (priority order):**
+  1. Translate `tutorials/commands/main.go` into a Vitest integration spec under `packages/tests/src/integration`, substituting the HTTP `checkServer` call with a fake client so the spec stays deterministic/offline while still asserting the async command flow.
+  2. Once the commands tutorial spec is failing, implement the runtime/helpers it demands (status rendering, error propagation) until it passes, then advance to the next example on the tutorial/example checklist.
+- **Blockers/Risks:**
+  - The commands tutorial issues a live HTTP request in Go; keep network access OUT OF SCOPE FOR LOOP by stubbing the client inside the test harness so we don’t rely on real I/O.
+
 ## 2025-11-15 (Session 57)
 - **Completed:**
   - Backfilled the lone missing `mouse_test.go` scenario by adding the explicit “left in motion” combination entry to `packages/tests/src/mouse/mouse.test.ts`, then reran `pnpm --filter @bubbletea/tests exec vitest run src/mouse/mouse.test.ts` to confirm the suite stays green.

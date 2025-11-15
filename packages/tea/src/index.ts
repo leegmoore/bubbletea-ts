@@ -49,6 +49,11 @@ export interface WindowSizeMsg {
   readonly height: number;
 }
 
+export interface SetWindowTitleMsg {
+  readonly type: 'bubbletea/set-window-title';
+  readonly title: string;
+}
+
 type SimpleMsg<TType extends string> = { readonly type: TType };
 
 export type SuspendMsg = SimpleMsg<'bubbletea/suspend'>;
@@ -1775,6 +1780,11 @@ export class Program {
       case 'bubbletea/disable-report-focus':
         this.renderer.disableReportFocus();
         break;
+      case 'bubbletea/set-window-title': {
+        const title = (msg as Partial<SetWindowTitleMsg>).title;
+        this.renderer.setWindowTitle(typeof title === 'string' ? title : '');
+        break;
+      }
       default:
         break;
     }
@@ -2199,6 +2209,10 @@ export const EnableReportFocus: Cmd<EnableReportFocusMsg> = createSimpleMsgCmd(
 export const DisableReportFocus: Cmd<DisableReportFocusMsg> = createSimpleMsgCmd(
   'bubbletea/disable-report-focus'
 );
+export const SetWindowTitle = (title: string): Cmd<SetWindowTitleMsg> => () => ({
+  type: 'bubbletea/set-window-title',
+  title: String(title)
+});
 export const Println = (...args: unknown[]): Cmd<PrintLineMsg> => () => ({
   type: 'bubbletea/print-line',
   body: formatPrintArgs(args)
