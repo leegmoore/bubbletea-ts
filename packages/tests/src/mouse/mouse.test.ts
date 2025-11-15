@@ -340,6 +340,16 @@ const parseX10Tests: readonly ParseMouseTest[] = [
     Button: MouseButton.MouseButtonRight,
     Type: MouseEventType.MouseRight
   }),
+  // Go keeps a duplicate "left in motion" case inside the combinations block to
+  // ensure modifiers are explicitly cleared whenever their bits are absent. The
+  // underlying parser should never leak modifier state between events, so we
+  // keep that explicit assertion here as well.
+  createX10Test('left in motion (explicit reset)', 0b0010_0000, 32, 16, {
+    Alt: false,
+    Button: MouseButton.MouseButtonLeft,
+    Action: MouseAction.MouseActionMotion,
+    Type: MouseEventType.MouseLeft
+  }),
   createX10Test('alt+right in motion', 0b0010_1010, 32, 16, {
     Alt: true,
     Button: MouseButton.MouseButtonRight,

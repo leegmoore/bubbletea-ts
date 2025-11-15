@@ -1,5 +1,6 @@
 // Core primitives for the Bubble Tea TypeScript runtime.
 
+import { spawn, type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { Console } from 'node:console';
 import { createWriteStream } from 'node:fs';
 import { Writable } from 'node:stream';
@@ -94,6 +95,15 @@ export interface ScrollDownMsg {
 
 export interface ClearScrollAreaMsg {
   readonly type: 'bubbletea/clear-scroll-area';
+}
+
+export type ExecCallback = (error: Error | null) => Msg | null | undefined;
+
+export interface ExecCommand {
+  setStdin(input: NodeJS.ReadableStream | null): void;
+  setStdout(output: NodeJS.WritableStream | null): void;
+  setStderr(output: NodeJS.WritableStream | null): void;
+  run(): Promise<void>;
 }
 
 const hasType = (msg: Msg, type: string): msg is Record<string, unknown> & { type: string } =>
@@ -803,6 +813,12 @@ export interface RunResult {
   err: Error | null;
 }
 
+interface ExecMsg {
+  readonly type: 'bubbletea/exec';
+  readonly command: ExecCommand;
+  readonly callback?: ExecCallback | null;
+}
+
 type InternalMsg = Msg | BatchMsg | SequenceMsg;
 
 interface Deferred<T> {
@@ -835,6 +851,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isQuitMessage = (msg: unknown): msg is QuitMsg => isRecord(msg) && msg.type === 'bubbletea/quit';
 const isSuspendMessage = (msg: unknown): msg is SuspendMsg =>
   isRecord(msg) && msg.type === 'bubbletea/suspend';
+
+const isExecMessage = (msg: unknown): msg is ExecMsg =>
+  isRecord(msg) && msg.type === 'bubbletea/exec' && 'command' in (msg as Record<string, unknown>);
 
 const isCmdArray = (value: unknown): value is Cmd[] =>
   Array.isArray(value) && value.every((entry) => entry == null || typeof entry === 'function');
@@ -872,6 +891,9 @@ const getDefaultInput = (): NodeJS.ReadableStream | null =>
 
 const getDefaultOutput = (): NodeJS.WritableStream | null =>
   typeof process !== 'undefined' && process.stdout ? process.stdout : null;
+
+const getDefaultErrorOutput = (): NodeJS.WritableStream | null =>
+  typeof process !== 'undefined' && process.stderr ? process.stderr : null;
 
 const sanitizeDimension = (value: unknown): number | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -1565,6 +1587,11 @@ export class Program {
       }
     }
 
+    if (isExecMessage(nextMsg)) {
+      await this.handleExecMsg(nextMsg);
+      return;
+    }
+
     this.handleInternalMsg(nextMsg);
     this.renderer.handleMessage?.(nextMsg);
 
@@ -1661,6 +1688,47 @@ export class Program {
     this.restoreTerminal();
     this.suspending = false;
     this.enqueueMsg({ type: 'bubbletea/resume' });
+  }
+
+  private async handleExecMsg(msg: ExecMsg): Promise<void> {
+    if (!this.isRunning()) {
+      return;
+    }
+
+    this.releaseTerminal();
+    msg.command.setStdin(this.input);
+    msg.command.setStdout(this.output);
+    msg.command.setStderr(getDefaultErrorOutput());
+
+    let execError: Error | null = null;
+    try {
+      await msg.command.run();
+    } catch (error) {
+      execError = toError(error, 'exec command failed');
+    } finally {
+      this.renderer.resetLinesRendered();
+      this.restoreTerminal();
+    }
+
+    this.dispatchExecCallback(msg.callback ?? null, execError);
+  }
+
+  private dispatchExecCallback(callback: ExecCallback | null, error: Error | null): void {
+    if (!callback) {
+      return;
+    }
+
+    let nextMsg: Msg | null | undefined;
+    try {
+      nextMsg = callback(error);
+    } catch (err) {
+      this.handlePanic(err);
+      return;
+    }
+
+    if (nextMsg != null) {
+      void this.send(nextMsg).catch(() => undefined);
+    }
   }
 
   private handleInternalMsg(msg: Msg): void {
@@ -1922,9 +1990,154 @@ const createTimerPromise = <TMsg>(delayMs: number, fn: (ts: Date) => TMsg): Prom
   });
 };
 
+export type ExecProcessSpec = string | readonly string[] | ExecProcessOptions;
+
+export interface ExecProcessOptions extends SpawnOptionsWithoutStdio {
+  readonly command: string;
+  readonly args?: readonly string[];
+}
+
+type NormalizedExecProcessSpec = {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly options: SpawnOptionsWithoutStdio;
+};
+
+const normalizeExecProcessSpec = (spec: ExecProcessSpec): NormalizedExecProcessSpec => {
+  if (typeof spec === 'string') {
+    return { command: spec, args: [], options: {} };
+  }
+
+  if (Array.isArray(spec)) {
+    if (spec.length === 0) {
+      throw new Error('exec command list must not be empty');
+    }
+    const [command, ...args] = spec;
+    return { command, args, options: {} };
+  }
+
+  const {
+    command,
+    args = [],
+    stdio: _ignoredStdio,
+    ...options
+  } = spec as ExecProcessOptions & { stdio?: SpawnOptionsWithoutStdio['stdio'] };
+
+  if (typeof command !== 'string' || command.length === 0) {
+    throw new Error('exec command must include a command string');
+  }
+
+  return { command, args: [...args], options };
+};
+
+class SpawnExecCommand implements ExecCommand {
+  private stdin: NodeJS.ReadableStream | null = null;
+  private stdout: NodeJS.WritableStream | null = null;
+  private stderr: NodeJS.WritableStream | null = null;
+
+  constructor(private readonly spec: NormalizedExecProcessSpec) {}
+
+  setStdin(input: NodeJS.ReadableStream | null): void {
+    if (!this.stdin && input) {
+      this.stdin = input;
+    }
+  }
+
+  setStdout(output: NodeJS.WritableStream | null): void {
+    if (!this.stdout && output) {
+      this.stdout = output;
+    }
+  }
+
+  setStderr(output: NodeJS.WritableStream | null): void {
+    if (!this.stderr && output) {
+      this.stderr = output;
+    }
+  }
+
+  async run(): Promise<void> {
+    const stdin = this.stdin ?? getDefaultInput();
+    const stdout = this.stdout ?? getDefaultOutput();
+    const stderr = this.stderr ?? getDefaultErrorOutput();
+    const args = [...this.spec.args];
+
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(this.spec.command, args, {
+        ...this.spec.options,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      const cleanups: Array<() => void> = [];
+      const cleanup = () => {
+        while (cleanups.length > 0) {
+          try {
+            cleanups.pop()?.();
+          } catch {
+            // ignore cleanup errors
+          }
+        }
+      };
+
+      if (stdin && child.stdin) {
+        stdin.pipe(child.stdin);
+        cleanups.push(() => stdin.unpipe(child.stdin));
+      } else if (child.stdin) {
+        child.stdin.end();
+      }
+
+      if (stdout && child.stdout) {
+        child.stdout.pipe(stdout, { end: false });
+        cleanups.push(() => child.stdout?.unpipe(stdout));
+      } else {
+        child.stdout?.resume();
+      }
+
+      if (stderr && child.stderr) {
+        child.stderr.pipe(stderr, { end: false });
+        cleanups.push(() => child.stderr?.unpipe(stderr));
+      } else {
+        child.stderr?.resume();
+      }
+
+      child.once('error', (error) => {
+        cleanup();
+        reject(error);
+      });
+
+      child.once('close', (code, signal) => {
+        cleanup();
+        if (code === 0 && signal == null) {
+          resolve();
+          return;
+        }
+
+        const message =
+          signal != null
+            ? `process exited with signal ${signal}`
+            : `process exited with code ${code ?? 'unknown'}`;
+        const execError = new Error(message);
+        (execError as NodeJS.ErrnoException).code =
+          typeof code === 'number' ? code.toString() : undefined;
+        (execError as NodeJS.ErrnoException).signal = signal ?? undefined;
+        reject(execError);
+      });
+    });
+  }
+}
+
 export const Quit: Cmd<QuitMsg> = () => ({ type: 'bubbletea/quit' });
 export const Interrupt: Cmd<InterruptMsg> = () => ({ type: 'bubbletea/interrupt' });
 export const Suspend: Cmd<SuspendMsg> = () => ({ type: 'bubbletea/suspend' });
+export const Exec = (command: ExecCommand, callback?: ExecCallback | null): Cmd => () => ({
+  type: 'bubbletea/exec',
+  command,
+  callback: callback ?? null
+});
+
+export function ExecProcess(spec: ExecProcessSpec, callback?: ExecCallback | null): Cmd {
+  const normalized = normalizeExecProcessSpec(spec);
+  return Exec(new SpawnExecCommand(normalized), callback);
+}
 
 export function Batch(...cmds: Cmd[]): Cmd {
   return compactCmds(cmds, (validCmds) => () => [...validCmds] as BatchMsg);

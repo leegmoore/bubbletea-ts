@@ -12,6 +12,18 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 57)
+- **Completed:**
+  - Backfilled the lone missing `mouse_test.go` scenario by adding the explicit “left in motion” combination entry to `packages/tests/src/mouse/mouse.test.ts`, then reran `pnpm --filter @bubbletea/tests exec vitest run src/mouse/mouse.test.ts` to confirm the suite stays green.
+  - Translated `exec_test.go` into `packages/tests/src/exec/exec.test.ts`, mirroring the invalid/true/false command table and instrumenting the renderer so unexpected failures assert that `resetLinesRendered` fires; captured the expected Vitest failure while the runtime lacked Exec support.
+  - Implemented the Exec runtime bridge: introduced `ExecCommand`/`ExecProcess` wrappers that spawn child processes with the Program’s input/output streams, taught `Program` to handle `bubbletea/exec` messages (release terminal, run command, reset renderer, restore terminal, dispatch callback), and documented the approach in decision D-059.
+  - Re-ran `pnpm --filter @bubbletea/tests exec vitest run src/exec/exec.test.ts` so the new spec and runtime changes are verified end-to-end.
+- **What’s Next (priority order):**
+  1. Pick the first Go tutorial/example (e.g., `examples/spinner` or `examples/typing`) to serve as an integration acceptance spec, translate it into a Vitest suite under `packages/tests/src/integration`, and outline any harness utilities (fake timers/PTYs) it needs.
+  2. Once that integration spec is in place, fill in the remaining runtime gaps it exposes (e.g., scheduler hooks, renderer behaviours) until the example passes, then roll forward to the next example on the checklist.
+- **Blockers/Risks:**
+  - The integration suites will likely need a lightweight PTY/fake-terminal harness; keep the design macOS-friendly and log any Windows-only requirements as OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-15 (Session 56)
 - **Completed:**
   - Added a PTY-backed Go regression (`TestProgramSuspendRefreshesWindowSizeAfterResume`) plus a helper to wait for window-size messages so `RestoreTerminal()` is now required to call `checkResize` after each suspend cycle, and reran `go test ./...`.
@@ -652,9 +664,9 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - [x] `tea_test.go`
 - [x] `screen_test.go`
 - [x] `key_test.go`
-- [ ] `mouse_test.go`
+- [x] `mouse_test.go`
 - [x] `signals` (`SIGWINCH` resize handling)
-- [ ] `exec_test.go`
+- [x] `exec_test.go`
 - [ ] Integration tests derived from tutorials/examples
 
 ## 2025-11-14 (Session 2)
