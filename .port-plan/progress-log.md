@@ -6,54 +6,27 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - Keep `.port-plan/plan.md`, `progress-log.md`, and `decision-log.md` in sync whenever scope shifts so later sessions inherit the right marching orders.
 - Prioritize tasks that are achievable in this environment (translating Go tests, updating TypeScript runtime/tests, local documentation). If a task requires remote access—pushing to `origin/main`, triggering GitHub Actions, publishing packages—record it under **Blockers** rather than the top "What's Next" slot, and explicitly note "OUT OF SCOPE FOR LOOP" so future sessions don't re-promote it.
 - This loop runs on macOS. Do **not** attempt Windows-native bindings, pseudo-console loaders, or WriteConsoleInput harness work here—log those items as blocked and move on.
+- **⚠️ DEFERRED: Integration tests, tutorials, and examples** are OUT OF SCOPE for this loop. The focus is on porting and testing the core Bubbletea framework. Integration tests that depend on Bubbles, Lipgloss, or other external libraries will be addressed after those libraries are ported separately. Do NOT create integration test suites or port examples/tutorials.
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
 - Before editing runtime code, confirm the corresponding Go/Vitest specs exist (read the plan + Test Parity checklist); if not, translate the specs first.
-- **⚠️ CRITICAL: Phase 6.5 Quality Gate** has been added to the plan. After examples/tutorials are ported, the loop MUST complete Phase 6.5 (Code Quality & Consistency) before moving to Phase 7. This phase requires running `pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm test` successfully IN ONE CLEAN RUN. If any stage fails during fixes, the entire chain must be re-run. This prevents shipping code with hidden lint/type/test inconsistencies.
+- **⚠️ CRITICAL: Phase 6.5 Quality Gate** - Core Bubbletea porting is COMPLETE (Phases 0-5 done). The loop MUST now complete Phase 6.5 (Code Quality & Consistency) which requires running `pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm test` successfully IN ONE CLEAN RUN. If any stage fails during fixes, the entire chain must be re-run. This prevents shipping code with hidden lint/type/test inconsistencies.
 - End every session by refreshing the Test Parity checklist and restating "What's Next" as actionable, locally doable steps.
 
 - **Blockers/Risks:**
 
-## 2025-11-15 (Session 61)
-- **Completed:**
-  - Extracted the reusable `FakeSpinner` helper under `packages/tests/src/integration/utils/fake-spinner.ts` and switched the spinner example spec to share it so future example suites don’t duplicate the tick/frame plumbing.
-  - Translated `examples/send-msg/main.go` into `packages/tests/src/integration/examples-send-msg.test.ts`, modeling Program.send-driven result updates, placeholder rows, and deterministic fake meals/durations.
-  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/integration/examples-send-msg.test.ts src/integration/examples-spinner.test.ts` to keep the new send-msg spec and the existing spinner spec green together.
-- **What’s Next (priority order):**
-  1. Translate `examples/spinners/main.go` into `packages/tests/src/integration/examples-spinners.test.ts`, reusing the shared fake spinner to cover multiple concurrent spinners and richer layout rendering.
-  2. After the spinners suite stabilizes, tackle `examples/package-manager/main.go` by translating it into a Vitest integration spec that captures its staged progress flow before touching production code.
+## 2025-11-15 (Sessions 58-61 - Scope Change)
+- **Decision:** Integration tests, tutorials, and examples deferred. These require Bubbles, Lipgloss, and other external libraries that will be ported separately. Sessions 58-61 explored integration test approaches but this work has been removed from scope.
+- **What's Next (priority order):**
+  1. **BEGIN PHASE 6.5** - Code Quality & Consistency Gate. This is now the highest priority.
+  2. Install Prettier and eslint-config-prettier per Phase 6.5 instructions in the plan.
+  3. Run `pnpm format` to auto-fix formatting issues.
+  4. Run `pnpm lint:fix` to auto-fix simple lint errors.
+  5. Manually fix remaining lint errors (~112 currently).
+  6. Fix TypeScript compilation errors (~67 currently).
+  7. Fix any test failures introduced by the above changes.
+  8. Run the full verification chain (`pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm test`) until it passes cleanly in one run.
 - **Blockers/Risks:**
-  - Bubbles components beyond the basic spinner remain unported, so upcoming example specs must keep relying on local fakes until the Bubbles TypeScript port begins.
-
-## 2025-11-15 (Session 60)
-- **Completed:**
-  - Ported `examples/spinner/main.go` into `packages/tests/src/integration/examples-spinner.test.ts`, creating a deterministic fake spinner that drives Tick/Update/View semantics plus the example’s `errMsg` branch without relying on the real Bubbles dependency.
-  - Kept the new spinner spec and the prior tutorial suites green via `pnpm --filter @bubbletea/tests exec vitest run src/integration/examples-spinner.test.ts src/integration/tutorials-commands.test.ts src/integration/tutorials-basics.test.ts`.
-- **What’s Next (priority order):**
-  1. Translate `examples/send-msg/main.go` into `packages/tests/src/integration/examples-send-msg.test.ts`, stubbing spinner/timer helpers so the multi-step messaging flow stays deterministic under Vitest.
-  2. After the send-msg suite is stable, continue marching through the remaining `examples/` targets (spinner gallery, package-manager, etc.), using each new spec to expose runtime/helper gaps before touching production code.
-- **Blockers/Risks:**
-  - No TypeScript spinner bubble exists yet, so integration suites must keep relying on fakes until the actual component port begins.
-
-## 2025-11-15 (Session 59)
-- **Completed:**
-  - Translated `tutorials/commands/main.go` into `packages/tests/src/integration/tutorials-commands.test.ts`, replacing the HTTP call with a deterministic async command so the suite asserts success, error, and ctrl+c cancellation paths offline.
-  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/integration/tutorials-commands.test.ts src/integration/tutorials-basics.test.ts` to keep the new commands tutorial spec and the existing basics tutorial spec green together.
-- **What’s Next (priority order):**
-  1. Translate `examples/spinner/main.go` into a Vitest integration spec (e.g., `packages/tests/src/integration/examples-spinner.test.ts`) by stubbing the Bubbles spinner dependency with a deterministic fake that exercises ticker commands without real wall-clock time.
-  2. Once the spinner example spec exists (and likely fails), fill any runtime or helper gaps it reveals—then choose the next example from `examples/` to continue expanding the integration suite checklist.
-- **Blockers/Risks:**
-  - Bubbles’ spinner component is not yet ported to TypeScript; tests must provide their own fake spinner until the actual component library is available.
-
-## 2025-11-15 (Session 58)
-- **Completed:**
-  - Translated `tutorials/basics/main.go` into `packages/tests/src/integration/tutorials-basics.test.ts`, exercising window-title initialization, cursor movement, selection toggles, and quit behaviour via the fake TTY harness.
-  - Added full `SetWindowTitle` runtime support (message type, exported command, and Program renderer hook) so the tutorial spec drives the renderer’s `setWindowTitle` implementation rather than relying on manual testing.
-  - Re-ran `pnpm --filter @bubbletea/tests exec vitest run src/integration/tutorials-basics.test.ts src/program/tea.test.ts` to keep both the new integration suite and the broader program lifecycle coverage green.
-- **What’s Next (priority order):**
-  1. Translate `tutorials/commands/main.go` into a Vitest integration spec under `packages/tests/src/integration`, substituting the HTTP `checkServer` call with a fake client so the spec stays deterministic/offline while still asserting the async command flow.
-  2. Once the commands tutorial spec is failing, implement the runtime/helpers it demands (status rendering, error propagation) until it passes, then advance to the next example on the tutorial/example checklist.
-- **Blockers/Risks:**
-  - The commands tutorial issues a live HTTP request in Go; keep network access OUT OF SCOPE FOR LOOP by stubbing the client inside the test harness so we don’t rely on real I/O.
+  - Phase 6.5 exit criteria requires all stages to pass consecutively. If any stage breaks during fixes, the entire chain must be re-run from the beginning.
 
 ## 2025-11-15 (Session 57)
 - **Completed:**
@@ -701,7 +674,7 @@ Entries are reverse-chronological. Each session should append a new dated sectio
   - Need to evaluate existing Node terminal libraries (e.g., `node-pty`, `ansi-escapes`, `blessed-contrib`) and decide whether to depend on them or build minimal wrappers.
   - Confirm licensing compatibility for reusing Charmbracelet assets/documentation.
 
-### Test Parity Checklist (to update as suites are ported)
+### Test Parity Checklist (Core Bubbletea Framework)
 - [x] `commands_test.go`
 - [x] `options_test.go`
 - [x] `tea_test.go`
@@ -710,7 +683,8 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - [x] `mouse_test.go`
 - [x] `signals` (`SIGWINCH` resize handling)
 - [x] `exec_test.go`
-- [ ] Integration tests derived from tutorials/examples (tutorials/basics done, tutorials/commands done; next: examples/spinner)
+- [x] **Core framework porting: COMPLETE** (Phases 0-5)
+- [ ] **Phase 6.5: Code Quality & Consistency** (format, lint, typecheck, build, test all passing)
 
 ## 2025-11-14 (Session 2)
 - **Session Goals:** Stand up the pnpm/TypeScript workspace, configure Vitest + linting, and port the first Go test suite (`commands_test.go`) before implementing runtime code.
