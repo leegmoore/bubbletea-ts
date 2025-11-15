@@ -8,10 +8,11 @@ import type { WriteStream } from 'node:fs';
 import {
   InputReaderCanceledError,
   createCancelableInputReader,
+  createSuspendBridge,
   openInputTTY,
   readAnsiInputs
 } from './internal';
-import type { CancelableInputReader } from './internal';
+import type { CancelableInputReader, SuspendBridgeProcess } from './internal';
 
 export * from './key';
 export * from './mouse';
@@ -200,6 +201,9 @@ export interface SignalSource {
 
 const resolveDefaultSignalSource = (): SignalSource | null =>
   typeof process !== 'undefined' && typeof process.on === 'function' ? process : null;
+
+const resolveSuspendProcessHandle = (): SuspendBridgeProcess | null =>
+  typeof process !== 'undefined' ? process : null;
 
 export interface Renderer {
   readonly kind: 'standard' | 'nil';
@@ -945,6 +949,7 @@ export class Program {
   private releasedBracketedPaste = false;
   private releasedReportFocus = false;
   private signalSource: SignalSource | null = resolveDefaultSignalSource();
+  private readonly suspendBridge = createSuspendBridge(resolveSuspendProcessHandle());
 
   constructor(public model: Model | null) {
     this.renderer = new StandardRenderer(() => this.output, () => this.fps);
@@ -1068,7 +1073,7 @@ export class Program {
   }
 
   protected suspendProcess(): Promise<void> {
-    return Promise.resolve();
+    return this.suspendBridge();
   }
 
   println(...args: unknown[]): void {

@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 50)
+- **Completed:**
+  - Added `packages/tests/src/program/suspend-bridge.test.ts` to lock down the `createSuspendBridge` helper (listener ordering, process-group fallbacks, cleanup semantics, and the Windows no-op path) before touching runtime code.
+  - Implemented `packages/tea/src/internal/suspend.ts`, exported the helper via `@bubbletea/tea/internal`, and wired `Program.suspendProcess()` to the bound bridge so suspend now orchestrates a real SIGTSTP/SIGCONT cycle when supported.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/program/suspend-bridge.test.ts src/program/tea.test.ts` to keep the new suite plus the existing program coverage green.
+- **What’s Next (priority order):**
+  1. Finish the remaining `%#v`/`%+v` formatter cases from Go’s `tea_printf_placeholders_test.go` inside `packages/tests/src/fmt/printf.test.ts`, then adjust the TypeScript formatter until the new specs pass.
+  2. Start translating `mouse_test.go` into `packages/tests/src/mouse/mouse.test.ts` (port fixtures, helpers, and deterministic cases) so Phase 4’s input work can proceed tests-first before touching runtime code.
+- **Blockers/Risks:**
+  - Manual SIGTSTP/SIGCONT QA remains OUT OF SCOPE FOR LOOP; running the real suspend bridge inside Vitest would freeze the process, so verification must happen in a separate interactive shell later.
+
 ## 2025-11-15 (Session 49)
 - **Completed:**
   - Captured the Unix-only suspend bridge strategy inside `.port-plan/tty-signal-strategy.md`, outlining the `createSuspendBridge` helper, signal flow, and TDD rollout, and logged it as decision D-054.
