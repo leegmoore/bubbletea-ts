@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-14 (Session 47)
+- **Completed:**
+  - Ported the remaining ReleaseTerminal/RestoreTerminal suspend flows from `tea.go` into Vitest by adding the `suspend / resume` specs in `packages/tests/src/program/tea.test.ts`, covering both the single-cycle release/restore + ResumeMsg emission and repeated suspend/resume cycles.
+  - Extended the TypeScript runtime with `Suspend`/`ResumeMsg` support: `Program` now recognizes `bubbletea/suspend`, releases the terminal, awaits an overridable `suspendProcess`, restores the terminal, and queues a `ResumeMsg`, plus exports the new `Suspend` command for models.
+  - Ran `pnpm vitest run src/program/tea.test.ts` from `packages/tests` (89 passing specs) to prove the new suspend/resume coverage and runtime changes stay green.
+- **What’s Next (priority order):**
+  1. Outline the tty/signal test strategy for release/resume scenarios (which Go specs to translate, what fake signal emitters are needed) so we can keep following tests-first before touching signal wiring.
+  2. Once the strategy exists, begin translating the tty/signal behaviours (Suspend, Resume, Interrupt) into Vitest to unblock implementing a real `suspendProcess`/signal bridge in the runtime.
+- **Blockers/Risks:**
+  - `suspendProcess` currently resolves immediately; designing a Node-safe way to trigger SIGTSTP/SIGCONT without freezing the process still needs research and should follow the upcoming tty/signal plan.
+
 ## 2025-11-14 (Session 46)
 - **Completed:**
   - Extended the Vitest release/restore suite with `\"re-emits the latest window size when the terminal changes while released\"` in `packages/tests/src/program/tea.test.ts`, mirroring `tea.go::RestoreTerminal`'s `checkResize` call to ensure a `WindowSizeMsg` is emitted after regaining control.

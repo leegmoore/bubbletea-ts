@@ -38,6 +38,7 @@ import { FakeTtyInput, FakeTtyOutput } from '../utils/fake-tty';
 type CtxImplodeMsg = { type: 'ctxImplode'; cancel: () => void };
 type IncrementMsg = { type: 'increment' };
 type PanicMsg = { type: 'panic' };
+type ResumeMsg = { type: 'bubbletea/resume' };
 type MsgWithType = { type?: string };
 
 const PANIC_MSG = 'testing panic behavior';
@@ -101,6 +102,9 @@ const isCtxImplodeMsg = (msg: Msg): msg is CtxImplodeMsg =>
 
 const isPanicMsg = (msg: Msg): msg is PanicMsg =>
   isRecord(msg) && (msg as MsgWithType).type === 'panic';
+
+const isResumeMsg = (msg: Msg): msg is ResumeMsg =>
+  isRecord(msg) && (msg as MsgWithType).type === 'bubbletea/resume';
 
 class TestModel implements Model {
   public executed = false;
@@ -1795,6 +1799,173 @@ describe('Program lifecycle (tea_test.go parity)', () => {
       input.end('q');
       const result = await runPromise;
       expect(result.err).toBeNull();
+    });
+  });
+
+  describe('suspend / resume', () => {
+    class SuspendResumeModel implements Model {
+      public resumeCount = 0;
+
+      init(): Cmd {
+        return null;
+      }
+
+      update(msg: Msg) {
+        if (isResumeMsg(msg)) {
+          this.resumeCount += 1;
+          return [this, null] as const;
+        }
+        if (isKeyMsg(msg) && keyToString(msg) === 'q') {
+          return [this, Quit] as const;
+        }
+        return [this, null] as const;
+      }
+
+      view(): string {
+        return 'suspend-resume-test\n';
+      }
+    }
+
+    it('releases the terminal while suspended and restores it before emitting ResumeMsg', async () => {
+      const input = new FakeTtyInput(false);
+      const output = new FakeTtyOutput();
+      const model = new SuspendResumeModel();
+      const { program } = createProgram(
+        model,
+        WithInput(input),
+        WithOutput(output),
+        WithAltScreen(),
+        WithReportFocus()
+      );
+      const runPromise = awaitRun(program);
+
+      await waitFor(() => input.rawModeCalls.includes(true), {
+        timeoutMs: 500,
+        errorMessage: 'program never entered raw mode'
+      });
+      await waitFor(() => input.listenerCount('data') > 0, {
+        timeoutMs: 500,
+        errorMessage: 'input listeners were not attached before suspending'
+      });
+      await waitFor(() => program.renderer.altScreen(), {
+        timeoutMs: 500,
+        errorMessage: 'alt screen never activated before suspending'
+      });
+      await waitFor(() => program.renderer.reportFocus(), {
+        timeoutMs: 500,
+        errorMessage: 'focus reporting never enabled before suspending'
+      });
+
+      const suspendDeferred = createDeferred<void>();
+      const programWithSuspend = program as Program & { suspendProcess(): Promise<void> };
+      const suspendProcessSpy = vi.fn(async () => {
+        await suspendDeferred.promise;
+      });
+      programWithSuspend.suspendProcess = suspendProcessSpy;
+
+      const stopSpy = vi.spyOn(program.renderer, 'stop');
+      const startSpy = vi.spyOn(program.renderer, 'start');
+      const initialStartCalls = startSpy.mock.calls.length;
+      const initialStopCalls = stopSpy.mock.calls.length;
+
+      await sendMessage(program, { type: 'bubbletea/suspend' });
+
+      await waitFor(() => input.rawModeCalls.at(-1) === false, {
+        timeoutMs: 500,
+        errorMessage: 'raw mode was not disabled while suspended'
+      });
+      await waitFor(() => input.listenerCount('data') === 0, {
+        timeoutMs: 500,
+        errorMessage: 'input listeners were not removed while suspended'
+      });
+
+      expect(program.ignoreSignals).toBe(true);
+      expect(program.renderer.altScreen()).toBe(false);
+      expect(program.renderer.reportFocus()).toBe(false);
+      expect(stopSpy.mock.calls.length).toBe(initialStopCalls + 1);
+      expect(suspendProcessSpy).toHaveBeenCalledTimes(1);
+      expect(model.resumeCount).toBe(0);
+
+      suspendDeferred.resolve();
+
+      await waitFor(() => input.listenerCount('data') > 0, {
+        timeoutMs: 500,
+        errorMessage: 'input listeners were not restored after resuming'
+      });
+      await waitFor(() => input.rawModeCalls.at(-1) === true, {
+        timeoutMs: 500,
+        errorMessage: 'raw mode was not restored after resuming'
+      });
+      await waitFor(() => program.renderer.altScreen(), {
+        timeoutMs: 500,
+        errorMessage: 'alt screen was not re-enabled after resuming'
+      });
+      await waitFor(() => program.renderer.reportFocus(), {
+        timeoutMs: 500,
+        errorMessage: 'focus reporting was not re-enabled after resuming'
+      });
+      await waitFor(() => model.resumeCount === 1, {
+        timeoutMs: 500,
+        errorMessage: 'ResumeMsg was not emitted after suspension completed'
+      });
+
+      expect(program.ignoreSignals).toBe(false);
+      expect(startSpy.mock.calls.length).toBe(initialStartCalls + 1);
+
+      input.end('q');
+      const result = await runPromise;
+      expect(result.err).toBeNull();
+    });
+
+    it('emits a ResumeMsg for each suspend / resume cycle', async () => {
+      const input = new FakeTtyInput(false);
+      const output = new FakeTtyOutput();
+      const model = new SuspendResumeModel();
+      const { program } = createProgram(model, WithInput(input), WithOutput(output), WithAltScreen());
+      const runPromise = awaitRun(program);
+
+      await waitFor(() => input.rawModeCalls.includes(true), {
+        timeoutMs: 500,
+        errorMessage: 'program never entered raw mode'
+      });
+
+      const suspendResolvers: Array<() => void> = [];
+      const programWithSuspend = program as Program & { suspendProcess(): Promise<void> };
+      const suspendProcessSpy = vi.fn(() => {
+        const deferred = createDeferred<void>();
+        suspendResolvers.push(() => deferred.resolve());
+        return deferred.promise;
+      });
+      programWithSuspend.suspendProcess = suspendProcessSpy;
+
+      const runCycle = async (expectedResumeCount: number) => {
+        await sendMessage(program, { type: 'bubbletea/suspend' });
+        await waitFor(() => input.rawModeCalls.at(-1) === false, {
+          timeoutMs: 500,
+          errorMessage: 'raw mode was not disabled during suspend'
+        });
+        expect(program.ignoreSignals).toBe(true);
+        const resolver = suspendResolvers.shift();
+        expect(resolver).toBeDefined();
+        resolver?.();
+        await waitFor(() => input.rawModeCalls.at(-1) === true, {
+          timeoutMs: 500,
+          errorMessage: 'raw mode was not restored after suspend'
+        });
+        await waitFor(() => model.resumeCount === expectedResumeCount, {
+          timeoutMs: 500,
+          errorMessage: `ResumeMsg #${expectedResumeCount} was not emitted`
+        });
+        expect(program.ignoreSignals).toBe(false);
+      };
+
+      await runCycle(1);
+      await runCycle(2);
+
+      input.end('q');
+      const result = await runPromise;
+      expect(result.err).toBeNull();
+      expect(suspendProcessSpy).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -49,6 +49,9 @@ export interface WindowSizeMsg {
 
 type SimpleMsg<TType extends string> = { readonly type: TType };
 
+export type SuspendMsg = SimpleMsg<'bubbletea/suspend'>;
+export type ResumeMsg = SimpleMsg<'bubbletea/resume'>;
+
 export type ClearScreenMsg = SimpleMsg<'bubbletea/clear-screen'>;
 export type EnterAltScreenMsg = SimpleMsg<'bubbletea/enter-alt-screen'>;
 export type ExitAltScreenMsg = SimpleMsg<'bubbletea/exit-alt-screen'>;
@@ -803,6 +806,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const isQuitMessage = (msg: unknown): msg is QuitMsg => isRecord(msg) && msg.type === 'bubbletea/quit';
+const isSuspendMessage = (msg: unknown): msg is SuspendMsg =>
+  isRecord(msg) && msg.type === 'bubbletea/suspend';
 
 const isCmdArray = (value: unknown): value is Cmd[] =>
   Array.isArray(value) && value.every((entry) => entry == null || typeof entry === 'function');
@@ -878,6 +883,9 @@ const isWritableTty = (
 ): stream is NodeJS.WriteStream =>
   Boolean(stream && (stream as NodeJS.WriteStream).isTTY);
 
+const SUSPEND_SUPPORTED =
+  typeof process !== 'undefined' && process.platform !== 'win32';
+
 type ProgramState = 'idle' | 'starting' | 'running' | 'stopping' | 'stopped';
 
 export class Program {
@@ -908,6 +916,7 @@ export class Program {
   private rawInputCleanup?: () => void;
   private resizeCleanup?: () => void;
   private terminalReleased = false;
+  private suspending = false;
   private releasedAltScreen = false;
   private releasedBracketedPaste = false;
   private releasedReportFocus = false;
@@ -1027,6 +1036,10 @@ export class Program {
     this.releasedAltScreen = false;
     this.releasedBracketedPaste = false;
     this.releasedReportFocus = false;
+  }
+
+  protected suspendProcess(): Promise<void> {
+    return Promise.resolve();
   }
 
   println(...args: unknown[]): void {
@@ -1448,6 +1461,13 @@ export class Program {
       return;
     }
 
+    if (isSuspendMessage(nextMsg) && SUSPEND_SUPPORTED) {
+      await this.handleSuspend();
+      if (!this.isRunning()) {
+        return;
+      }
+    }
+
     this.handleInternalMsg(nextMsg);
     this.renderer.handleMessage?.(nextMsg);
 
@@ -1525,6 +1545,25 @@ export class Program {
     }
 
     this.enqueueMsg(result);
+  }
+
+  private async handleSuspend(): Promise<void> {
+    if (!this.isRunning() || this.suspending || this.terminalReleased) {
+      return;
+    }
+    this.suspending = true;
+    this.releaseTerminal();
+    try {
+      await this.suspendProcess();
+    } catch (error) {
+      this.restoreTerminal();
+      this.suspending = false;
+      this.handlePanic(error);
+      return;
+    }
+    this.restoreTerminal();
+    this.suspending = false;
+    this.enqueueMsg({ type: 'bubbletea/resume' });
   }
 
   private handleInternalMsg(msg: Msg): void {
@@ -1625,6 +1664,7 @@ export class Program {
     this.processingQueue = false;
     this.stopRenderer(err);
     this.terminalReleased = false;
+    this.suspending = false;
     this.releasedAltScreen = false;
     this.releasedBracketedPaste = false;
     this.releasedReportFocus = false;
@@ -1781,6 +1821,7 @@ const createTimerPromise = <TMsg>(delayMs: number, fn: (ts: Date) => TMsg): Prom
 };
 
 export const Quit: Cmd<QuitMsg> = () => ({ type: 'bubbletea/quit' });
+export const Suspend: Cmd<SuspendMsg> = () => ({ type: 'bubbletea/suspend' });
 
 export function Batch(...cmds: Cmd[]): Cmd {
   return compactCmds(cmds, (validCmds) => () => [...validCmds] as BatchMsg);
