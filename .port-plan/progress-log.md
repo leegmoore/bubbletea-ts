@@ -12,6 +12,16 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 60)
+- **Completed:**
+  - Ported `examples/spinner/main.go` into `packages/tests/src/integration/examples-spinner.test.ts`, creating a deterministic fake spinner that drives Tick/Update/View semantics plus the example’s `errMsg` branch without relying on the real Bubbles dependency.
+  - Kept the new spinner spec and the prior tutorial suites green via `pnpm --filter @bubbletea/tests exec vitest run src/integration/examples-spinner.test.ts src/integration/tutorials-commands.test.ts src/integration/tutorials-basics.test.ts`.
+- **What’s Next (priority order):**
+  1. Translate `examples/send-msg/main.go` into `packages/tests/src/integration/examples-send-msg.test.ts`, stubbing spinner/timer helpers so the multi-step messaging flow stays deterministic under Vitest.
+  2. After the send-msg suite is stable, continue marching through the remaining `examples/` targets (spinner gallery, package-manager, etc.), using each new spec to expose runtime/helper gaps before touching production code.
+- **Blockers/Risks:**
+  - No TypeScript spinner bubble exists yet, so integration suites must keep relying on fakes until the actual component port begins.
+
 ## 2025-11-15 (Session 59)
 - **Completed:**
   - Translated `tutorials/commands/main.go` into `packages/tests/src/integration/tutorials-commands.test.ts`, replacing the HTTP call with a deterministic async command so the suite asserts success, error, and ctrl+c cancellation paths offline.
