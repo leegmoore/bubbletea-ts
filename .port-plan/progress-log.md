@@ -12,6 +12,16 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 59)
+- **Completed:**
+  - Translated `tutorials/commands/main.go` into `packages/tests/src/integration/tutorials-commands.test.ts`, replacing the HTTP call with a deterministic async command so the suite asserts success, error, and ctrl+c cancellation paths offline.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/integration/tutorials-commands.test.ts src/integration/tutorials-basics.test.ts` to keep the new commands tutorial spec and the existing basics tutorial spec green together.
+- **What’s Next (priority order):**
+  1. Translate `examples/spinner/main.go` into a Vitest integration spec (e.g., `packages/tests/src/integration/examples-spinner.test.ts`) by stubbing the Bubbles spinner dependency with a deterministic fake that exercises ticker commands without real wall-clock time.
+  2. Once the spinner example spec exists (and likely fails), fill any runtime or helper gaps it reveals—then choose the next example from `examples/` to continue expanding the integration suite checklist.
+- **Blockers/Risks:**
+  - Bubbles’ spinner component is not yet ported to TypeScript; tests must provide their own fake spinner until the actual component library is available.
+
 ## 2025-11-15 (Session 58)
 - **Completed:**
   - Translated `tutorials/basics/main.go` into `packages/tests/src/integration/tutorials-basics.test.ts`, exercising window-title initialization, cursor movement, selection toggles, and quit behaviour via the fake TTY harness.
@@ -678,7 +688,7 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 - [x] `mouse_test.go`
 - [x] `signals` (`SIGWINCH` resize handling)
 - [x] `exec_test.go`
-- [ ] Integration tests derived from tutorials/examples
+- [ ] Integration tests derived from tutorials/examples (tutorials/basics done, tutorials/commands done; next: examples/spinner)
 
 ## 2025-11-14 (Session 2)
 - **Session Goals:** Stand up the pnpm/TypeScript workspace, configure Vitest + linting, and port the first Go test suite (`commands_test.go`) before implementing runtime code.
