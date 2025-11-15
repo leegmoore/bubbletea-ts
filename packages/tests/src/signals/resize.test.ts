@@ -129,4 +129,67 @@ describe('terminal resize propagation (signals)', () => {
     expectGracefulExit(result);
     expect(model.sizes).toHaveLength(0);
   });
+
+  it('pauses resize propagation while releaseTerminal is active and resumes after restore', async () => {
+    const output = new FakeTty(91, 42);
+    const { program, model } = createProgram(output);
+    const runPromise = awaitRun(program);
+
+    await waitFor(() => model.sizes.length >= 1, {
+      errorMessage: 'initial window size never arrived'
+    });
+
+    program.releaseTerminal();
+
+    output.setSize(120, 54);
+    output.emitResize();
+
+    await expect(
+      waitFor(() => model.sizes.length >= 2, {
+        timeoutMs: 150,
+        errorMessage: 'resize should be paused while the terminal is released'
+      })
+    ).rejects.toThrow();
+
+    program.restoreTerminal();
+
+    await waitFor(() => model.sizes.length >= 2, {
+      errorMessage: 'restoreTerminal never resumed resize propagation'
+    });
+
+    const [, resumed] = model.sizes;
+    expect(resumed).toEqual({ width: 120, height: 54 });
+
+    program.quit();
+    const result = await runPromise;
+    expectGracefulExit(result);
+  });
+
+  it('removes resize listeners once the program stops', async () => {
+    const output = new FakeTty(77, 21);
+    const { program, model } = createProgram(output);
+    const runPromise = awaitRun(program);
+
+    await waitFor(() => model.sizes.length >= 1, {
+      errorMessage: 'initial window size never arrived'
+    });
+
+    program.quit();
+    const result = await runPromise;
+    expectGracefulExit(result);
+
+    const recorded = model.sizes.length;
+    const listenerCount = typeof output.listenerCount === 'function' ? output.listenerCount('resize') : 0;
+    expect(listenerCount).toBe(0);
+
+    output.setSize(140, 33);
+    output.emitResize();
+
+    await expect(
+      waitFor(() => model.sizes.length > recorded, {
+        timeoutMs: 150,
+        errorMessage: 'resize listener should be removed after shutdown'
+      })
+    ).rejects.toThrow();
+  });
 });

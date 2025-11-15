@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 53)
+- **Completed:**
+  - Authored `packages/tests/src/tty/open-input-tty.test.ts`, mocking `node:fs` and `node:tty` to assert `/dev/tty` opens with `O_RDWR`, `ReadStream` instances auto-destroy, and file descriptors close when stream construction fails, then ran `pnpm --filter @bubbletea/tests exec vitest run src/tty/open-input-tty.test.ts`.
+  - Extended `packages/tests/src/signals/resize.test.ts` with the SIGWINCH lifecycle + `ReleaseTerminal` gating scenarios, updated `Program.releaseTerminal()`/`restoreTerminal()` to tear down and reinstall resize listeners, and reran `pnpm --filter @bubbletea/tests exec vitest run src/signals/resize.test.ts src/tty/open-input-tty.test.ts` (both green).
+- **What’s Next (priority order):**
+  1. Backfill the canonical Go `signals_unix_test.go` suite covering SIGWINCH delivery and release/restore gating so the new Vitest cases have a Go oracle, then run `go test ./...` before re-running the translated suites.
+  2. Use that Go spec to audit `packages/tests/src/signals/resize.test.ts` for any missing scenarios (`WithoutRenderer`, `ignoreSignals`, shutdown teardown) and ensure `Program.setupResizeListener()` matches the coverage before touching additional runtime code.
+- **Blockers/Risks:**
+  - Need the upstream Go `signals_unix_test.go` scaffold to keep parity with Bubble Tea before landing further runtime changes.
+  - Manual SIGTSTP/SIGCONT QA remains OUT OF SCOPE FOR LOOP; interactive suspend verification still requires a dedicated shell later.
+
 ## 2025-11-15 (Session 52)
 - **Completed:**
   - Mechanically diffed `mouse_test.go` against `packages/tests/src/mouse/mouse.test.ts`, confirmed every positive case already exists, and documented why Go's error-only suite stays unported in TypeScript before rerunning `vitest` on the mouse specs.

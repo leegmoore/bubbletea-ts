@@ -1031,6 +1031,7 @@ export class Program {
     if (!this.isRunning() || this.terminalReleased) {
       return;
     }
+    this.cleanupResizeListener();
     this.ignoreSignals = true;
     this.pauseInput();
     this.renderer.stop();
@@ -1054,6 +1055,7 @@ export class Program {
       this.renderer.repaint();
     }
     this.renderer.start();
+    this.setupResizeListener();
     if (this.releasedBracketedPaste) {
       this.renderer.enableBracketedPaste();
     } else {
@@ -1064,7 +1066,6 @@ export class Program {
     } else {
       this.renderer.disableReportFocus();
     }
-    this.emitWindowSizeFrom(this.output);
     this.render();
     this.terminalReleased = false;
     this.releasedAltScreen = false;
