@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 51)
+- **Completed:**
+  - Pulled the data-heavy Printf formatting specs out of `packages/tests/src/program/tea.test.ts`, moved them into the new `packages/tests/src/fmt/printf.test.ts`, and introduced `packages/tests/src/utils/go-values.ts` so Printf-focused suites can share the Go-like pointer/channel helpers instead of re-defining them inline.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/fmt/printf.test.ts src/program/tea.test.ts` to make sure both the freshly split fmt suite and the leaner program suite still pass after the reshuffle.
+  - Reviewed Go’s `mouse_test.go` alongside `packages/tests/src/mouse/mouse.test.ts` to confirm the TypeScript suite already mirrors the MouseEvent stringer plus the X10/SGR parsers, so we know the spec coverage is ready once we resume mouse runtime work.
+- **What’s Next (priority order):**
+  1. Do a mechanical diff between Go’s `mouse_test.go` cases and `packages/tests/src/mouse/mouse.test.ts`, backfilling any missing edge cases so we can stamp the mouse spec as complete and unblock future runtime changes.
+  2. Kick off the next spec translation from the tty/signal roadmap (e.g., seed a `packages/tests/src/tty/raw-mode.test.ts` from `tty_raw_mode_test.go`) so we keep Phase 4 coverage moving once mouse/key inputs are locked down.
+- **Blockers/Risks:**
+  - Manual SIGTSTP/SIGCONT QA remains OUT OF SCOPE FOR LOOP; exercising the real suspend bridge inside Vitest would freeze the runner, so interactive verification has to wait for a dedicated shell later.
+
 ## 2025-11-15 (Session 50)
 - **Completed:**
   - Added `packages/tests/src/program/suspend-bridge.test.ts` to lock down the `createSuspendBridge` helper (listener ordering, process-group fallbacks, cleanup semantics, and the Windows no-op path) before touching runtime code.

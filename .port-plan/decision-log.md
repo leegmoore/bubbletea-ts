@@ -25,5 +25,6 @@ Capture durable architectural/process choices. Use the table below for quick ref
 | D-052 | 2025-11-14 | Mouse string helper parity | Added `mouseEventToString` plus parser exports so translated mouse specs exercise the real formatter/parsers before runtime changes. | Final |
 | D-053 | 2025-11-15 | Signal handling injection | Program installs SIGINT/SIGTERM listeners through a pluggable `SignalSource` (defaults to `process`) so tests can inject fakes while `WithoutSignals`/`WithoutSignalHandler` mirror Go semantics. | Final |
 | D-054 | 2025-11-15 | Suspend process bridge strategy | Implemented the Unix-only `createSuspendBridge` helper that signals the process group, falls back to the PID, and exposes an injectable bridge so the runtime’s `suspendProcess` uses the real flow under test control. | Final |
+| D-055 | 2025-11-15 | Formatter spec extraction | Moved the Printf `%#v`/`%+v` parity suite into `packages/tests/src/fmt/printf.test.ts` and centralized the Go-like pointer/channel helpers in `packages/tests/src/utils/go-values.ts` for reuse. | Final |
 
 **Windows-specific decisions (D-020, D-047, D-048, D-049, D-050, D-051)** were removed on 2025-11-14 after scoping Windows work out of this macOS-only loop.
