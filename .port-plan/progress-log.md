@@ -4,11 +4,12 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 ## Loop Guardrails (sticky)
 
 - Keep `.port-plan/plan.md`, `progress-log.md`, and `decision-log.md` in sync whenever scope shifts so later sessions inherit the right marching orders.
-- Prioritize tasks that are achievable in this environment (translating Go tests, updating TypeScript runtime/tests, local documentation). If a task requires remote access—pushing to `origin/main`, triggering GitHub Actions, publishing packages—record it under **Blockers** rather than the top “What’s Next” slot, and explicitly note “OUT OF SCOPE FOR LOOP” so future sessions don’t re-promote it.
+- Prioritize tasks that are achievable in this environment (translating Go tests, updating TypeScript runtime/tests, local documentation). If a task requires remote access—pushing to `origin/main`, triggering GitHub Actions, publishing packages—record it under **Blockers** rather than the top "What's Next" slot, and explicitly note "OUT OF SCOPE FOR LOOP" so future sessions don't re-promote it.
 - This loop runs on macOS. Do **not** attempt Windows-native bindings, pseudo-console loaders, or WriteConsoleInput harness work here—log those items as blocked and move on.
 - When fmt/renderer work reaches diminishing returns, advance to the next Go suites scheduled in the plan (input, key/mouse, tty, exec) so the loop keeps progressing through the roadmap.
 - Before editing runtime code, confirm the corresponding Go/Vitest specs exist (read the plan + Test Parity checklist); if not, translate the specs first.
-- End every session by refreshing the Test Parity checklist and restating “What’s Next” as actionable, locally doable steps.
+- **⚠️ CRITICAL: Phase 6.5 Quality Gate** has been added to the plan. After examples/tutorials are ported, the loop MUST complete Phase 6.5 (Code Quality & Consistency) before moving to Phase 7. This phase requires running `pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm test` successfully IN ONE CLEAN RUN. If any stage fails during fixes, the entire chain must be re-run. This prevents shipping code with hidden lint/type/test inconsistencies.
+- End every session by refreshing the Test Parity checklist and restating "What's Next" as actionable, locally doable steps.
 
 - **Blockers/Risks:**
 

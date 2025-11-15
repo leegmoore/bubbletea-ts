@@ -14,20 +14,14 @@ import {
 } from '@bubbletea/tea';
 
 import { FakeTtyInput, FakeTtyOutput } from '../utils/fake-tty';
+import { FakeSpinner } from './utils/fake-spinner';
 
-const SPINNER_TICK_TYPE = 'examples/spinner/tick';
 const SPINNER_ERROR_TYPE = 'examples/spinner/error';
-
-interface SpinnerTickMsg {
-  readonly type: typeof SPINNER_TICK_TYPE;
-}
 
 interface SpinnerErrorMsg {
   readonly type: typeof SPINNER_ERROR_TYPE;
   readonly error: Error;
 }
-
-const createSpinnerTickMsg = (): SpinnerTickMsg => ({ type: SPINNER_TICK_TYPE });
 
 const createSpinnerErrorMsg = (message: string): SpinnerErrorMsg => ({
   type: SPINNER_ERROR_TYPE,
@@ -43,49 +37,6 @@ const isSpinnerErrorMsg = (msg: Msg): msg is SpinnerErrorMsg =>
 const isKeyMsg = (msg: Msg): msg is KeyMsg =>
   typeof msg === 'object' && msg !== null && typeof (msg as KeyMsg).type === 'number';
 
-const isSpinnerTickMsg = (msg: Msg): msg is SpinnerTickMsg =>
-  typeof msg === 'object' &&
-  msg !== null &&
-  (msg as SpinnerTickMsg).type === SPINNER_TICK_TYPE;
-
-type OnTick = (tickIndex: number) => void;
-
-class FakeSpinner {
-  private frameIndex = 0;
-  private tickCounter = 0;
-
-  constructor(
-    private readonly frames: readonly string[] = ['⠋', '⠙', '⠹', '⠸'],
-    private readonly onTick?: OnTick
-  ) {}
-
-  readonly Tick: Cmd = () =>
-    new Promise<SpinnerTickMsg>((resolve) => {
-      const tickIndex = this.tickCounter;
-      this.tickCounter += 1;
-      setTimeout(() => {
-        this.onTick?.(tickIndex);
-        resolve(createSpinnerTickMsg());
-      }, 0);
-    });
-
-  update(msg: Msg): [FakeSpinner, Cmd] | [FakeSpinner] {
-    if (!isSpinnerTickMsg(msg)) {
-      return [this] as const;
-    }
-
-    this.frameIndex = (this.frameIndex + 1) % this.frames.length;
-    return [this, this.Tick] as const;
-  }
-
-  view(): string {
-    return this.frames[this.frameIndex];
-  }
-
-  get ticksScheduled(): number {
-    return this.tickCounter;
-  }
-}
 
 class SpinnerExampleModel implements Model {
   public quitting = false;

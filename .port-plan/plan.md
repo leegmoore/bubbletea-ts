@@ -1,6 +1,6 @@
 # Bubble Tea → TypeScript Port Plan
 
-_Last updated: 2025-11-14_
+_Last updated: 2025-11-15_
 
 ## 1. Repository Analysis Snapshot
 - **Language & scope:** Original project is a single Go module (`github.com/charmbracelet/bubbletea`) containing ~30 core `.go` files plus large `examples/` and `tutorials/` trees.
@@ -82,6 +82,86 @@ _Out of scope initially:_ re-imagining API ergonomics, hooking into browsers, or
 1. Port selected Go examples to TS (prioritize `simple`, `list-default`, `progress`, `mouse`).
 2. Update README to describe TypeScript usage, include quick-start.
 3. Provide migration notes for Go users moving to TS.
+
+### Phase 6.5 – Code Quality & Consistency ⚠️ **CRITICAL GATE**
+**This phase is a mandatory quality gate before release prep. All checks must pass sequentially without errors.**
+
+#### Setup Instructions (One-time)
+1. **Install Prettier and ESLint integration:**
+   ```bash
+   pnpm add -D prettier eslint-config-prettier
+   ```
+
+2. **Create `.prettierrc` in project root:**
+   ```json
+   {
+     "semi": true,
+     "trailingComma": "es5",
+     "singleQuote": false,
+     "tabWidth": 2,
+     "printWidth": 100,
+     "arrowParens": "always"
+   }
+   ```
+
+3. **Create `.prettierignore` in project root:**
+   ```
+   node_modules
+   dist
+   build
+   coverage
+   *.min.js
+   pnpm-lock.yaml
+   ```
+
+4. **Update `eslint.config.js`** to disable formatting rules that conflict with Prettier:
+   - Import `eslint-config-prettier` at the END of your extends array
+   - This disables ESLint rules that Prettier handles
+   - Example: `extends: [...otherConfigs, 'prettier']`
+
+5. **Add scripts to root `package.json`:**
+   ```json
+   {
+     "scripts": {
+       "format": "prettier --write .",
+       "format:check": "prettier --check .",
+       "lint": "eslint .",
+       "lint:fix": "eslint . --fix",
+       "typecheck": "pnpm -r run typecheck",
+       "test": "vitest run",
+       "verify": "pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm test"
+     }
+   }
+   ```
+
+#### Exit Criteria (ALL must pass in sequence)
+The phase is **NOT complete** until you can run this command successfully:
+```bash
+pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm test
+```
+
+**All four stages must pass consecutively:**
+1. ✅ **Format check:** `pnpm format` completes without changes (code already formatted)
+2. ✅ **Lint check:** `pnpm lint` exits 0 (no ESLint errors)
+3. ✅ **Type check:** `pnpm typecheck` exits 0 (no TypeScript compilation errors)
+4. ✅ **Build:** `pnpm build` produces clean output (packages compile)
+5. ✅ **Tests:** `pnpm test` shows all test files and tests passing
+
+**Important rules:**
+- If you fix linting errors, you MUST re-run `format && lint && typecheck && build && test` from the beginning
+- If you fix type errors, you MUST re-run the full chain again
+- If you fix test failures, you MUST re-run the full chain again
+- **Why:** Fixing lint can break tests; fixing tests can introduce lint/type errors; fixing types can break tests
+- The chain must complete cleanly IN ONE RUN before Phase 6.5 is considered complete
+
+#### Workflow Strategy
+1. Run `pnpm format` first to auto-fix formatting
+2. Run `pnpm lint:fix` to auto-fix simple lint issues
+3. Fix remaining lint errors manually (floating promises, unsafe any, etc.)
+4. Fix TypeScript compilation errors (type assertions, undefined checks, etc.)
+5. Fix any test failures caused by the above changes
+6. Run the full verification chain to confirm everything passes
+7. If any stage fails, fix and restart from step 6
 
 ### Phase 7 – Hardening & Release Prep
 1. Audit performance (profiling render loop, memory), benchmark vs Go reference on sample apps.
