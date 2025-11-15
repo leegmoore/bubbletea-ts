@@ -33,5 +33,6 @@ Capture durable architectural/process choices. Use the table below for quick ref
 | D-060 | 2025-11-15 | Tutorial integration suites | Port each official tutorial (starting with `tutorials/basics`) into Vitest integration suites under `packages/tests/src/integration` so new runtime gaps (e.g., `SetWindowTitle`) are exposed by executable specs before editing production code. | Final |
 | D-061 | 2025-11-15 | Tutorial HTTP stubbing | Integration specs derived from HTTP-based tutorials replace real network calls with deterministic fake commands so Vitest stays offline, deterministic, and CI-friendly. | Final |
 | D-062 | 2025-11-15 | Bubbles component fakes | Until the actual Bubbles components are ported, integration specs supply deterministic local fakes (e.g., spinner) so example-driven tests stay executable without the upstream dependency. | Final |
+| D-063 | 2025-11-15 | Spinner test helper | Centralized the deterministic spinner fake in `packages/tests/src/integration/utils/fake-spinner.ts` so future specs reuse the same Tick semantics instead of re-implementing them. | Final |
 
 **Windows-specific decisions (D-020, D-047, D-048, D-049, D-050, D-051)** were removed on 2025-11-14 after scoping Windows work out of this macOS-only loop.

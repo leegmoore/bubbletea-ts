@@ -13,6 +13,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 61)
+- **Completed:**
+  - Extracted the reusable `FakeSpinner` helper under `packages/tests/src/integration/utils/fake-spinner.ts` and switched the spinner example spec to share it so future example suites don’t duplicate the tick/frame plumbing.
+  - Translated `examples/send-msg/main.go` into `packages/tests/src/integration/examples-send-msg.test.ts`, modeling Program.send-driven result updates, placeholder rows, and deterministic fake meals/durations.
+  - Ran `pnpm --filter @bubbletea/tests exec vitest run src/integration/examples-send-msg.test.ts src/integration/examples-spinner.test.ts` to keep the new send-msg spec and the existing spinner spec green together.
+- **What’s Next (priority order):**
+  1. Translate `examples/spinners/main.go` into `packages/tests/src/integration/examples-spinners.test.ts`, reusing the shared fake spinner to cover multiple concurrent spinners and richer layout rendering.
+  2. After the spinners suite stabilizes, tackle `examples/package-manager/main.go` by translating it into a Vitest integration spec that captures its staged progress flow before touching production code.
+- **Blockers/Risks:**
+  - Bubbles components beyond the basic spinner remain unported, so upcoming example specs must keep relying on local fakes until the Bubbles TypeScript port begins.
+
 ## 2025-11-15 (Session 60)
 - **Completed:**
   - Ported `examples/spinner/main.go` into `packages/tests/src/integration/examples-spinner.test.ts`, creating a deterministic fake spinner that drives Tick/Update/View semantics plus the example’s `errMsg` branch without relying on the real Bubbles dependency.
