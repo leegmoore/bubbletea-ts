@@ -248,6 +248,10 @@ describe('MouseEvent.String (mouse_test.go::TestMouseEvent_String)', () => {
   });
 });
 
+// Go also includes TestParseX10MouseEvent_error to assert the parser returns an
+// error on truncated or malformed sequences. Our TypeScript parser mirrors the
+// runtime helper in packages/tea, which normalizes missing bytes instead of
+// throwing, so there is no separate error path to translate.
 const parseX10Tests: readonly ParseMouseTest[] = [
   createX10Test('zero position', 0b0000_0000, 0, 0, {
     Button: MouseButton.MouseButtonLeft,

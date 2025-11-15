@@ -12,6 +12,16 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 52)
+- **Completed:**
+  - Mechanically diffed `mouse_test.go` against `packages/tests/src/mouse/mouse.test.ts`, confirmed every positive case already exists, and documented why Go's error-only suite stays unported in TypeScript before rerunning `vitest` on the mouse specs.
+  - Renamed the tty suite to `packages/tests/src/tty/raw-mode.test.ts`, relabeled each test with the corresponding `tty_raw_mode_test.go` identifier, added the missing `TestReleaseTerminalTogglesIgnoreSignals` scenario, and reran the mouse + tty suites via `pnpm --filter @bubbletea/tests exec vitest run src/mouse/mouse.test.ts src/tty/raw-mode.test.ts` (82 passing).
+- **What’s Next (priority order):**
+  1. Author `packages/tests/src/tty/open-input-tty.test.ts` that stubs `openInputTTY`/`ReadStream` to cover device-path selection and fd cleanup per the tty spec so the helper is locked down before runtime changes.
+  2. Extend the Unix resize coverage (either inside `packages/tests/src/signals/resize.test.ts` or a new `signals/sigwinch.test.ts`) with the forthcoming `signals_unix_test.go` cases—covering SIGWINCH listener lifecycle and `ReleaseTerminal` gating—so resize handling is fully specified before touching `Program.setupResizeListener`.
+- **Blockers/Risks:**
+  - Manual SIGTSTP/SIGCONT QA remains OUT OF SCOPE FOR LOOP; interactive suspend verification still requires a dedicated shell later.
+
 ## 2025-11-15 (Session 51)
 - **Completed:**
   - Pulled the data-heavy Printf formatting specs out of `packages/tests/src/program/tea.test.ts`, moved them into the new `packages/tests/src/fmt/printf.test.ts`, and introduced `packages/tests/src/utils/go-values.ts` so Printf-focused suites can share the Go-like pointer/channel helpers instead of re-defining them inline.

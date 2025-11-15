@@ -47,8 +47,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('tty raw-mode semantics', () => {
-  it('enables raw mode on tty inputs and restores the original state on shutdown', async () => {
+describe('setupTerminalInput (tty_raw_mode_test.go)', () => {
+  it('TestTTYRawModeEnablesAndRestores - enables raw mode on tty inputs and restores the original state on shutdown', async () => {
     const input = new FakeTtyInput(false);
     const { program } = createProgram(input);
     const runPromise = awaitRun(program);
@@ -66,7 +66,7 @@ describe('tty raw-mode semantics', () => {
     expect(input.isRaw).toBe(false);
   });
 
-  it('restores tty inputs to their prior raw-mode state when exiting', async () => {
+  it('TestTTYRawModeRestoresInitialState - restores tty inputs to their prior raw-mode state when exiting', async () => {
     const input = new FakeTtyInput(true);
     const { program } = createProgram(input);
     const runPromise = awaitRun(program);
@@ -84,7 +84,7 @@ describe('tty raw-mode semantics', () => {
     expect(input.isRaw).toBe(true);
   });
 
-  it('does not touch raw mode when the input stream is not a tty', async () => {
+  it('TestTTYRawModeSkipsNonTTYInputs - does not touch raw mode when the input stream is not a tty', async () => {
     const input = new NonTtyInput();
     const { program } = createProgram(input);
     const runPromise = awaitRun(program);
@@ -96,7 +96,7 @@ describe('tty raw-mode semantics', () => {
     expect(input.rawModeCalls).toHaveLength(0);
   });
 
-  it('skips raw-mode toggles entirely when rendering is disabled', async () => {
+  it('TestTTYRawModeSkipsWhenRendererDisabled - skips raw-mode toggles entirely when rendering is disabled', async () => {
     const input = new FakeTtyInput();
     const { program } = createProgram(input, WithoutRenderer());
     const runPromise = awaitRun(program);
@@ -108,7 +108,7 @@ describe('tty raw-mode semantics', () => {
     expect(input.rawModeCalls).toHaveLength(0);
   });
 
-  it('surfaces raw-mode enable failures as program panics', async () => {
+  it('TestTTYRawModeFailuresSurfaceAsProgramPanic - surfaces raw-mode enable failures as program panics', async () => {
     const failure = new Error('raw-mode failed');
     const input = new FakeTtyInput(false, {
       beforeSetRawMode: (next) => (next ? failure : null)
@@ -122,8 +122,8 @@ describe('tty raw-mode semantics', () => {
   });
 });
 
-describe('tty input fallback semantics', () => {
-  it('opens a dedicated tty when the default input is not a tty', async () => {
+describe('resolveInputSource (tty_raw_mode_test.go)', () => {
+  it('TestTTYInputFallbackOpensNewTTY - opens a dedicated tty when the default input is not a tty', async () => {
     const fallback = new FakeTtyInput(false);
     const openSpy = vi
       .spyOn(ttyInternals, 'openInputTTY')
@@ -146,7 +146,7 @@ describe('tty input fallback semantics', () => {
     expect(fallback.rawModeCalls).toEqual([true, false]);
   });
 
-  it('forces a new tty when WithInputTTY is provided', async () => {
+  it('TestTTYInputForcedFallbackIgnoresExistingTTY - forces a new tty when WithInputTTY is provided', async () => {
     const fallback = new FakeTtyInput(false);
     const openSpy = vi
       .spyOn(ttyInternals, 'openInputTTY')
@@ -171,7 +171,7 @@ describe('tty input fallback semantics', () => {
     expect(fallback.rawModeCalls).toEqual([true, false]);
   });
 
-  it('surfaces fallback tty open errors as program panics when default input is not a tty', async () => {
+  it('TestTTYInputFallbackErrorsSurfaceAsProgramPanic - surfaces fallback tty open errors as program panics when default input is not a tty', async () => {
     const openError = new Error('fallback failed');
     const openSpy = vi.spyOn(ttyInternals, 'openInputTTY').mockImplementation(() => {
       throw openError;
@@ -185,7 +185,7 @@ describe('tty input fallback semantics', () => {
     expect(panic.cause).toBe(openError);
   });
 
-  it('surfaces fallback tty open errors as program panics when WithInputTTY is set', async () => {
+  it('TS-specific - surfaces fallback tty open errors as program panics when WithInputTTY is set', async () => {
     const openError = new Error('forced open failed');
     const openSpy = vi.spyOn(ttyInternals, 'openInputTTY').mockImplementation(() => {
       throw openError;
@@ -199,5 +199,31 @@ describe('tty input fallback semantics', () => {
     const panic = expectKilledWithPanic(err);
     expect(panic.cause).toBe(openError);
     expect(manualInput.rawModeCalls).toHaveLength(0);
+  });
+});
+
+describe('releaseTerminal / restoreTerminal (tty_raw_mode_test.go::TestReleaseTerminalTogglesIgnoreSignals)', () => {
+  it('toggles ignoreSignals while keeping the program running', async () => {
+    const input = new FakeTtyInput(false);
+    const { program } = createProgram(input, WithoutRenderer());
+    const runPromise = awaitRun(program);
+
+    const stateRef = program as unknown as { state: string };
+    await waitFor(() => stateRef.state === 'running', {
+      timeoutMs: 500,
+      errorMessage: 'program never transitioned to running'
+    });
+
+    expect(program.ignoreSignals).toBe(false);
+
+    program.releaseTerminal();
+    expect(program.ignoreSignals).toBe(true);
+
+    program.restoreTerminal();
+    expect(program.ignoreSignals).toBe(false);
+
+    program.quit();
+    const result = await runPromise;
+    expectGracefulExit(result);
   });
 });
