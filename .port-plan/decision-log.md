@@ -24,5 +24,6 @@ Capture durable architectural/process choices. Use the table below for quick ref
 | D-019 | 2025-11-14 | Console patch lifecycle | `ConsoleLogOptions` reference-count active outputs and restore the original `console` methods once all log streams close. | Final |
 | D-052 | 2025-11-14 | Mouse string helper parity | Added `mouseEventToString` plus parser exports so translated mouse specs exercise the real formatter/parsers before runtime changes. | Final |
 | D-053 | 2025-11-15 | Signal handling injection | Program installs SIGINT/SIGTERM listeners through a pluggable `SignalSource` (defaults to `process`) so tests can inject fakes while `WithoutSignals`/`WithoutSignalHandler` mirror Go semantics. | Final |
+| D-054 | 2025-11-15 | Suspend process bridge strategy | Documented the plan for a Unix-only `createSuspendBridge` helper that sends `SIGTSTP`, awaits `SIGCONT`, and remains injectable so we can TDD the real `suspendProcess` implementation before shipping it. | Proposed |
 
 **Windows-specific decisions (D-020, D-047, D-048, D-049, D-050, D-051)** were removed on 2025-11-14 after scoping Windows work out of this macOS-only loop.

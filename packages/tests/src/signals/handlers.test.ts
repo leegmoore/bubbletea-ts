@@ -7,7 +7,9 @@ import {
   NewProgram,
   Program,
   ProgramInterruptedError,
+  ProgramKilledError,
   ProgramOption,
+  WithContext,
   WithInput,
   WithOutput,
   WithSignalSource,
@@ -127,5 +129,50 @@ describe('signal handling', () => {
     program.quit();
     const result = await runPromise;
     expect(result.err).toBeNull();
+  });
+
+  it('removes signal listeners once the program stops', async () => {
+    const { program, fakeSignals } = createSignalProgram();
+    const runPromise = awaitRun(program);
+
+    await waitFor(() => fakeSignals.listenerCount('SIGINT') > 0);
+    await waitFor(() => fakeSignals.listenerCount('SIGTERM') > 0);
+
+    program.quit();
+    const result = await runPromise;
+    expect(result.err).toBeNull();
+    expect(fakeSignals.listenerCount('SIGINT')).toBe(0);
+    expect(fakeSignals.listenerCount('SIGTERM')).toBe(0);
+  });
+
+  it('cleans up listeners when an external context cancels the program', async () => {
+    const external = new AbortController();
+    const { program, fakeSignals } = createSignalProgram(WithContext(external));
+    const runPromise = awaitRun(program);
+
+    await waitFor(() => fakeSignals.listenerCount('SIGINT') > 0);
+    external.abort(new Error('context canceled'));
+
+    const result = await runPromise;
+    expect(result.err).toBeInstanceOf(ProgramKilledError);
+    expect(fakeSignals.listenerCount('SIGINT')).toBe(0);
+    expect(fakeSignals.listenerCount('SIGTERM')).toBe(0);
+  });
+
+  it('allows WithoutSignalHandler to coexist with custom signal sources and external contexts', async () => {
+    const external = new AbortController();
+    const { program, fakeSignals } = createSignalProgram(WithContext(external), WithoutSignalHandler());
+    const runPromise = awaitRun(program);
+
+    await sleep(20);
+    expect(fakeSignals.listenerCount('SIGINT')).toBe(0);
+    expect(fakeSignals.listenerCount('SIGTERM')).toBe(0);
+
+    external.abort(new Error('context canceled'));
+
+    const result = await runPromise;
+    expect(result.err).toBeInstanceOf(ProgramKilledError);
+    expect(fakeSignals.listenerCount('SIGINT')).toBe(0);
+    expect(fakeSignals.listenerCount('SIGTERM')).toBe(0);
   });
 });

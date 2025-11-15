@@ -12,6 +12,16 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 49)
+- **Completed:**
+  - Captured the Unix-only suspend bridge strategy inside `.port-plan/tty-signal-strategy.md`, outlining the `createSuspendBridge` helper, signal flow, and TDD rollout, and logged it as decision D-054.
+  - Expanded `packages/tests/src/signals/handlers.test.ts` with listener-teardown plus `WithContext`/`WithoutSignalHandler` coverage using `FakeProcessSignals`, then ran `pnpm --filter @bubbletea/tests exec vitest run src/signals/handlers.test.ts` (8 passing).
+- **What’s Next (priority order):**
+  1. Author `packages/tests/src/program/suspend-bridge.test.ts` to lock down the helper contract (listener ordering, PID vs. process-group kills, error cases) before touching runtime code.
+  2. After the specs exist, implement `packages/tea/src/internal/suspend.ts` and wire `Program.suspendProcess()` to it while keeping the override hook available for tests/examples.
+- **Blockers/Risks:**
+  - Executing a real `SIGTSTP`/`SIGCONT` loop inside Vitest would freeze the runner; manual suspend QA remains OUT OF SCOPE FOR LOOP and must be done in a separate shell session once the helper lands.
+
 ## 2025-11-15 (Session 48)
 - **Completed:**
   - Captured the tty/signal roadmap in `.port-plan/tty-signal-strategy.md`, listing the Go specs to author plus the FakeProcessSignals helper we need on the Vitest side.
