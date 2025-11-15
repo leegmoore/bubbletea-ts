@@ -51,6 +51,7 @@ type SimpleMsg<TType extends string> = { readonly type: TType };
 
 export type SuspendMsg = SimpleMsg<'bubbletea/suspend'>;
 export type ResumeMsg = SimpleMsg<'bubbletea/resume'>;
+export type InterruptMsg = SimpleMsg<'bubbletea/interrupt'>;
 
 export type ClearScreenMsg = SimpleMsg<'bubbletea/clear-screen'>;
 export type EnterAltScreenMsg = SimpleMsg<'bubbletea/enter-alt-screen'>;
@@ -129,6 +130,9 @@ const isScrollDownMsg = (msg: Msg): msg is ScrollDownMsg =>
 const isClearScrollAreaMsg = (msg: Msg): msg is ClearScrollAreaMsg =>
   hasType(msg, 'bubbletea/clear-scroll-area');
 
+const isInterruptMessage = (msg: Msg): msg is InterruptMsg =>
+  hasType(msg, 'bubbletea/interrupt');
+
 export class ProgramPanicError extends Error {
   constructor(message = 'program experienced a panic', options?: ErrorOptions) {
     super(message, options);
@@ -140,6 +144,13 @@ export class ProgramKilledError extends Error {
   constructor(message = 'program was killed', options?: ErrorOptions) {
     super(message, options);
     this.name = 'ProgramKilledError';
+  }
+}
+
+export class ProgramInterruptedError extends Error {
+  constructor(message = 'program was interrupted', options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ProgramInterruptedError';
   }
 }
 
@@ -177,6 +188,18 @@ export class StartupOptions {
     this.flags &= ~flag;
   }
 }
+
+type SignalEvent = NodeJS.Signals;
+type SignalListener = () => void;
+
+export interface SignalSource {
+  on(event: SignalEvent, listener: SignalListener): unknown;
+  off?(event: SignalEvent, listener: SignalListener): unknown;
+  removeListener?(event: SignalEvent, listener: SignalListener): unknown;
+}
+
+const resolveDefaultSignalSource = (): SignalSource | null =>
+  typeof process !== 'undefined' && typeof process.on === 'function' ? process : null;
 
 export interface Renderer {
   readonly kind: 'standard' | 'nil';
@@ -915,11 +938,13 @@ export class Program {
   private inputReader?: CancelableInputReader;
   private rawInputCleanup?: () => void;
   private resizeCleanup?: () => void;
+  private signalCleanup?: () => void;
   private terminalReleased = false;
   private suspending = false;
   private releasedAltScreen = false;
   private releasedBracketedPaste = false;
   private releasedReportFocus = false;
+  private signalSource: SignalSource | null = resolveDefaultSignalSource();
 
   constructor(public model: Model | null) {
     this.renderer = new StandardRenderer(() => this.output, () => this.fps);
@@ -954,6 +979,10 @@ export class Program {
 
   async wait(): Promise<void> {
     await this.finished.promise;
+  }
+
+  setSignalSource(source: SignalSource | null): void {
+    this.signalSource = source;
   }
 
   async send(msg: Msg | BatchMsg | SequenceMsg): Promise<void> {
@@ -1078,6 +1107,7 @@ export class Program {
     this.renderer.start();
     this.applyStartupOptions();
     this.setupResizeListener();
+    this.setupSignalHandlers();
 
     if (this.messageQueue.length > 0 && !this.processingQueue) {
       this.processingQueue = true;
@@ -1324,6 +1354,55 @@ export class Program {
     }
   }
 
+  private setupSignalHandlers(): void {
+    if (
+      this.signalCleanup ||
+      this.startupOptions.has(StartupFlag.WithoutSignalHandler) ||
+      !this.signalSource ||
+      typeof this.signalSource.on !== 'function'
+    ) {
+      return;
+    }
+
+    const handleSigint = () => {
+      if (this.ignoreSignals) {
+        return;
+      }
+      this.enqueueMsg({ type: 'bubbletea/interrupt' });
+    };
+
+    const handleSigterm = () => {
+      if (this.ignoreSignals) {
+        return;
+      }
+      this.enqueueMsg({ type: 'bubbletea/quit' });
+    };
+
+    this.signalSource.on('SIGINT', handleSigint);
+    this.signalSource.on('SIGTERM', handleSigterm);
+
+    this.signalCleanup = () => {
+      const source = this.signalSource;
+      if (!source) {
+        return;
+      }
+      if (typeof source.off === 'function') {
+        source.off('SIGINT', handleSigint);
+        source.off('SIGTERM', handleSigterm);
+      } else if (typeof source.removeListener === 'function') {
+        source.removeListener('SIGINT', handleSigint);
+        source.removeListener('SIGTERM', handleSigterm);
+      }
+    };
+  }
+
+  private cleanupSignalHandlers(): void {
+    if (this.signalCleanup) {
+      this.signalCleanup();
+      this.signalCleanup = undefined;
+    }
+  }
+
   private applyStartupOptions(): void {
     if (this.startupOptions.has(StartupFlag.AltScreen)) {
       this.renderer.enterAltScreen();
@@ -1458,6 +1537,11 @@ export class Program {
 
     if (isQuitMessage(nextMsg)) {
       this.finish(null);
+      return;
+    }
+
+    if (isInterruptMessage(nextMsg)) {
+      this.finish(new ProgramInterruptedError());
       return;
     }
 
@@ -1659,6 +1743,7 @@ export class Program {
     this.state = 'stopping';
     this.cleanupInput();
     this.cleanupResizeListener();
+    this.cleanupSignalHandlers();
     this.clearExternalContextBinding();
     this.messageQueue.length = 0;
     this.processingQueue = false;
@@ -1715,6 +1800,10 @@ export const WithInputTTY = (): ProgramOption => (program) => {
 
 export const WithEnvironment = (env: string[]): ProgramOption => (program) => {
   program.environ = [...env];
+};
+
+export const WithSignalSource = (source: SignalSource | null): ProgramOption => (program) => {
+  program.setSignalSource(source);
 };
 
 export const WithoutSignals = (): ProgramOption => (program) => {
@@ -1821,6 +1910,7 @@ const createTimerPromise = <TMsg>(delayMs: number, fn: (ts: Date) => TMsg): Prom
 };
 
 export const Quit: Cmd<QuitMsg> = () => ({ type: 'bubbletea/quit' });
+export const Interrupt: Cmd<InterruptMsg> = () => ({ type: 'bubbletea/interrupt' });
 export const Suspend: Cmd<SuspendMsg> = () => ({ type: 'bubbletea/suspend' });
 
 export function Batch(...cmds: Cmd[]): Cmd {

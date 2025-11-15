@@ -2,6 +2,7 @@ package tea
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 )
 
@@ -248,6 +249,28 @@ func TestTTYRawModeFailuresSurfaceAsProgramPanic(t *testing.T) {
 	}
 	if !errors.Is(err, failure) {
 		t.Fatalf("expected original error to be wrapped, got %v", err)
+	}
+}
+
+func TestReleaseTerminalTogglesIgnoreSignals(t *testing.T) {
+	p := NewProgram(nil, WithoutRenderer())
+
+	if got := atomic.LoadUint32(&p.ignoreSignals); got != 0 {
+		t.Fatalf("ignoreSignals should start unset, got %d", got)
+	}
+
+	if err := p.ReleaseTerminal(); err != nil {
+		t.Fatalf("ReleaseTerminal() returned %v", err)
+	}
+	if got := atomic.LoadUint32(&p.ignoreSignals); got == 0 {
+		t.Fatalf("ignoreSignals should be set after ReleaseTerminal")
+	}
+
+	if err := p.RestoreTerminal(); err != nil {
+		t.Fatalf("RestoreTerminal() returned %v", err)
+	}
+	if got := atomic.LoadUint32(&p.ignoreSignals); got != 0 {
+		t.Fatalf("ignoreSignals should be cleared after RestoreTerminal, got %d", got)
 	}
 }
 

@@ -12,6 +12,18 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 48)
+- **Completed:**
+  - Captured the tty/signal roadmap in `.port-plan/tty-signal-strategy.md`, listing the Go specs to author plus the FakeProcessSignals helper we need on the Vitest side.
+  - Added `tea_signals_test.go` (SIGINT/SIGTERM + ignoreSignals coverage) and extended `tty_raw_mode_test.go` so the Go suite now defines the ReleaseTerminal/RestoreTerminal expectations we encoded in TypeScript.
+  - Introduced `packages/tests/src/utils/fake-process-signals.ts` and the new `signals/handlers.test.ts` suite, then updated the TypeScript runtime with `ProgramInterruptedError`, `Interrupt` commands, and a pluggable signal source so the translated specs pass.
+  - Verified the changes with `go test ./... -run TestHandleSignals` / `... -run TestReleaseTerminalTogglesIgnoreSignals` plus `pnpm --filter @bubbletea/tests exec vitest run src/signals/handlers.test.ts src/program/tea.test.ts`.
+- **What’s Next (priority order):**
+  1. Design and spec out a Node-safe `suspendProcess()` bridge (likely orchestrated via a helper child or pseudo terminal) so `Suspend` emits a real SIGTSTP/SIGCONT cycle instead of the current resolved promise.
+  2. Extend the new signal suites to cover listener teardown (handlers removed on quit) and ensure external contexts + `WithoutSignalHandler` coexist with injected signal sources before touching more runtime code.
+- **Blockers/Risks:**
+  - Suspending the active Node process via SIGTSTP risks freezing the Vitest runner; we need a safe strategy (e.g., delegating to a helper) before implementing the real `suspendProcess()` logic.
+
 ## 2025-11-14 (Session 47)
 - **Completed:**
   - Ported the remaining ReleaseTerminal/RestoreTerminal suspend flows from `tea.go` into Vitest by adding the `suspend / resume` specs in `packages/tests/src/program/tea.test.ts`, covering both the single-cycle release/restore + ResumeMsg emission and repeated suspend/resume cycles.
