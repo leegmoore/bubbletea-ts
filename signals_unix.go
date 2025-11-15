@@ -6,6 +6,7 @@ package tea
 import (
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -26,6 +27,10 @@ func (p *Program) listenForResize(done chan struct{}) {
 		case <-p.ctx.Done():
 			return
 		case <-sig:
+		}
+
+		if atomic.LoadUint32(&p.ignoreSignals) == 1 {
+			continue
 		}
 
 		p.checkResize()

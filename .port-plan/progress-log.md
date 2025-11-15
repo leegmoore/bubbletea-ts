@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 54)
+- **Completed:**
+  - Authored `signals_unix_test.go` with a PTY-backed harness covering initial window-size emission, SIGWINCH propagation, non-TTY short-circuits, and `ignoreSignals` gating, pulled in `github.com/creack/pty`, and ran `go test ./...`.
+  - Updated `signals_unix.go` so `listenForResize` skips `checkResize` whenever `ignoreSignals` is set, matching the new Go spec.
+  - Extended `packages/tests/src/signals/resize.test.ts` with `WithoutRenderer`/`WithoutSignals` cases, taught `Program.setupResizeListener()` to bail out when the renderer is nil and to respect `ignoreSignals`, then reran `pnpm --filter @bubbletea/tests exec vitest run src/signals/resize.test.ts`.
+- **What’s Next (priority order):**
+  1. Backfill a Go suspend spec (e.g., `suspend_unix_test.go`) that asserts `Program.suspend()` releases the terminal, pauses resize/signals, and emits `ResumeMsg` upon restoration, then re-run `go test ./...`.
+  2. Translate that suspend spec into a new Vitest suite (`packages/tests/src/program/suspend.test.ts`) and only adjust the TypeScript runtime’s suspend bridge once the tests exist and pass.
+- **Blockers/Risks:**
+  - Manual SIGTSTP/SIGCONT QA still requires an interactive shell and remains OUT OF SCOPE FOR LOOP.
+
 ## 2025-11-15 (Session 53)
 - **Completed:**
   - Authored `packages/tests/src/tty/open-input-tty.test.ts`, mocking `node:fs` and `node:tty` to assert `/dev/tty` opens with `O_RDWR`, `ReadStream` instances auto-destroy, and file descriptors close when stream construction fails, then ran `pnpm --filter @bubbletea/tests exec vitest run src/tty/open-input-tty.test.ts`.

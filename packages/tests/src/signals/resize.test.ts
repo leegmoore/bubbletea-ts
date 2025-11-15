@@ -1,8 +1,8 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
-import type { Cmd, Model, Msg, Program, WindowSizeMsg } from '@bubbletea/tea';
-import { NewProgram, WithInput, WithOutput } from '@bubbletea/tea';
+import type { Cmd, Model, Msg, Program, ProgramOption, WindowSizeMsg } from '@bubbletea/tea';
+import { NewProgram, WithInput, WithOutput, WithoutRenderer, WithoutSignals } from '@bubbletea/tea';
 
 import { waitFor, withTimeout } from '../utils/async';
 
@@ -61,7 +61,8 @@ class FakeTty extends PassThrough {
 
 const createProgram = (
   output: NodeJS.WritableStream,
-  overrides: { columns?: number; rows?: number } = {}
+  overrides: { columns?: number; rows?: number } = {},
+  options: ProgramOption[] = []
 ) => {
   const input = new PassThrough();
   const model = new WindowSizeRecorder();
@@ -73,7 +74,7 @@ const createProgram = (
       output.rows = overrides.rows;
     }
   }
-  const program = NewProgram(model, WithInput(input), WithOutput(output));
+  const program = NewProgram(model, WithInput(input), WithOutput(output), ...options);
   return { program, model, input, output };
 };
 
@@ -123,6 +124,24 @@ describe('terminal resize propagation (signals)', () => {
     const runPromise = awaitRun(program);
 
     await expect(waitFor(() => model.sizes.length > 0, { timeoutMs: 200 })).rejects.toThrow();
+
+    program.quit();
+    const result = await runPromise;
+    expectGracefulExit(result);
+    expect(model.sizes).toHaveLength(0);
+  });
+
+  it('skips resize propagation when the renderer is disabled', async () => {
+    const output = new FakeTty(70, 28);
+    const { program, model } = createProgram(output, {}, [WithoutRenderer()]);
+    const runPromise = awaitRun(program);
+
+    await expect(
+      waitFor(() => model.sizes.length > 0, {
+        timeoutMs: 200,
+        errorMessage: 'nil renderer should bypass window size emission'
+      })
+    ).rejects.toThrow();
 
     program.quit();
     const result = await runPromise;
@@ -191,5 +210,31 @@ describe('terminal resize propagation (signals)', () => {
         errorMessage: 'resize listener should be removed after shutdown'
       })
     ).rejects.toThrow();
+  });
+
+  it('ignores resize events when signals are disabled', async () => {
+    const output = new FakeTty(101, 31);
+    const { program, model } = createProgram(output, {}, [WithoutSignals()]);
+    const runPromise = awaitRun(program);
+
+    await waitFor(() => model.sizes.length >= 1, {
+      errorMessage: 'initial window size never arrived'
+    });
+
+    output.setSize(128, 48);
+    output.emitResize();
+
+    await expect(
+      waitFor(() => model.sizes.length >= 2, {
+        timeoutMs: 150,
+        errorMessage: 'resize events should be ignored while signals are disabled'
+      })
+    ).rejects.toThrow();
+
+    expect(model.sizes).toHaveLength(1);
+
+    program.quit();
+    const result = await runPromise;
+    expectGracefulExit(result);
   });
 });

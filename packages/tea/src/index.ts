@@ -1311,6 +1311,10 @@ export class Program {
       return;
     }
 
+    if (this.renderer instanceof NilRenderer) {
+      return;
+    }
+
     if (!isWritableTty(this.output)) {
       return;
     }
@@ -1322,6 +1326,9 @@ export class Program {
     };
 
     const onResize = () => {
+      if (this.ignoreSignals) {
+        return;
+      }
       emitWindowSize();
     };
 
