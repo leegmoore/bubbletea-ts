@@ -12,6 +12,17 @@ Entries are reverse-chronological. Each session should append a new dated sectio
 
 - **Blockers/Risks:**
 
+## 2025-11-15 (Session 56)
+- **Completed:**
+  - Added a PTY-backed Go regression (`TestProgramSuspendRefreshesWindowSizeAfterResume`) plus a helper to wait for window-size messages so `RestoreTerminal()` is now required to call `checkResize` after each suspend cycle, and reran `go test ./...`.
+  - Introduced `SuspendResumeWindowSizeModel` and a matching Vitest case in `packages/tests/src/program/suspend.test.ts` that mimics the new Go scenario and ensures `Program.restoreTerminal()` emits a `bubbletea/window-size` message whenever the terminal dimensions change while suspended.
+  - Re-ran `pnpm --filter @bubbletea/tests exec vitest run src/program/suspend.test.ts src/signals/resize.test.ts` to confirm the expanded suspend + resize coverage stays green.
+- **What’s Next (priority order):**
+  1. Finish the `mouse_test.go` parity pass by translating any missing Go scenarios (stringer edge cases, motion toggles, error branches) into `packages/tests/src/mouse/mouse.test.ts`, then adjust the TypeScript mouse parser only after the specs fail.
+  2. Start porting `exec_test.go` into a dedicated Vitest suite so the subprocess/command bridge work can remain tests-driven before touching `packages/tea/src/index.ts`.
+- **Blockers/Risks:**
+  - Manual SIGTSTP/SIGCONT QA still requires an interactive terminal session and remains OUT OF SCOPE FOR LOOP; rely on the automated suspend/resume tests instead.
+
 ## 2025-11-15 (Session 55)
 - **Completed:**
   - Authored `suspend_unix_test.go` with a fake renderer harness so `Program.suspend()` now asserts `ReleaseTerminal` stops the renderer, snapshots alt-screen/bracketed-paste/focus flags, drops `ignoreSignals` only after `RestoreTerminal()`, and queues `ResumeMsg`; reran `go test ./...` (green).

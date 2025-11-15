@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 func newSuspendTestProgram(t *testing.T) *Program {
@@ -174,6 +176,25 @@ func waitForAtomicValue(t *testing.T, ptr *uint32, want uint32, timeout time.Dur
 	t.Fatalf("expected %s to reach %d within %s; last value %d", field, want, timeout, atomic.LoadUint32(ptr))
 }
 
+func waitForWindowSizeMsgIgnoringOthers(t *testing.T, msgs <-chan Msg, timeout time.Duration) WindowSizeMsg {
+	t.Helper()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case msg := <-msgs:
+			ws, ok := msg.(WindowSizeMsg)
+			if ok {
+				return ws
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for WindowSizeMsg")
+		}
+	}
+}
+
 func TestProgramSuspendReleasesTerminalPausesSignalsAndEmitsResumeMsg(t *testing.T) {
 	p := newSuspendTestProgram(t)
 	t.Cleanup(func() { cleanupSuspendTestProgram(t, p) })
@@ -312,5 +333,62 @@ func TestProgramSuspendEmitsResumeMsgPerCycle(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatalf("ResumeMsg #%d was not emitted", i)
 		}
+	}
+}
+
+func TestProgramSuspendRefreshesWindowSizeAfterResume(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatalf("pty.Open() failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = master.Close()
+		_ = slave.Close()
+	})
+
+	p := newSuspendTestProgram(t)
+	t.Cleanup(func() { cleanupSuspendTestProgram(t, p) })
+	p.output = slave
+	p.ttyOutput = slave
+
+	setSize := func(width, height int) {
+		ws := &pty.Winsize{Cols: uint16(width), Rows: uint16(height)}
+		if err := pty.Setsize(master, ws); err != nil {
+			t.Fatalf("pty.Setsize() failed: %v", err)
+		}
+	}
+
+	setSize(80, 24)
+
+	started := make(chan struct{})
+	resume := make(chan struct{})
+	original := suspendProcess
+	suspendProcess = func() {
+		close(started)
+		<-resume
+	}
+	t.Cleanup(func() { suspendProcess = original })
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		p.suspend()
+		wg.Done()
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatalf("suspendProcess was not invoked")
+	}
+
+	setSize(132, 41)
+
+	close(resume)
+	waitWithTimeout(t, &wg, time.Second)
+
+	msg := waitForWindowSizeMsgIgnoringOthers(t, p.msgs, time.Second)
+	if msg.Width != 132 || msg.Height != 41 {
+		t.Fatalf("window size after resume = (%d, %d), want (132, 41)", msg.Width, msg.Height)
 	}
 }

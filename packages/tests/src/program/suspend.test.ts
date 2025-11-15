@@ -8,6 +8,7 @@ import {
   NewProgram,
   Program,
   Quit,
+  WindowSizeMsg,
   WithAltScreen,
   WithInput,
   WithOutput,
@@ -30,6 +31,9 @@ const isKeyMsg = (msg: Msg): msg is KeyMsg =>
 
 const isResumeMsg = (msg: Msg): msg is ResumeMsg =>
   isRecord(msg) && (msg as ResumeMsg).type === 'bubbletea/resume';
+
+const isWindowSizeMsg = (msg: Msg): msg is WindowSizeMsg =>
+  isRecord(msg) && (msg as WindowSizeMsg).type === 'bubbletea/window-size';
 
 const awaitRun = (program: Program, timeoutMs = 3000) => withTimeout(program.run(), timeoutMs);
 
@@ -56,6 +60,17 @@ class SuspendResumeModel implements Model {
 
   view(): string {
     return 'suspend-resume-test\n';
+  }
+}
+
+class SuspendResumeWindowSizeModel extends SuspendResumeModel {
+  public readonly windowSizes: Array<{ width: number; height: number }> = [];
+
+  override update(msg: Msg) {
+    if (isWindowSizeMsg(msg)) {
+      this.windowSizes.push({ width: msg.width, height: msg.height });
+    }
+    return super.update(msg);
   }
 }
 
@@ -200,5 +215,63 @@ describe('Program suspend / resume (suspend_unix_test.go parity)', () => {
     const result = await runPromise;
     expect(result.err).toBeNull();
     expect(suspendProcessSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('emits a WindowSizeMsg after resuming when the terminal size changed while suspended', async () => {
+    const input = new FakeTtyInput(false);
+    const output = new FakeTtyOutput();
+    output.columns = 90;
+    output.rows = 30;
+    const model = new SuspendResumeWindowSizeModel();
+    const program = NewProgram(
+      model,
+      WithInput(input),
+      WithOutput(output),
+      WithAltScreen(),
+      WithReportFocus()
+    );
+    const runPromise = awaitRun(program);
+
+    await waitFor(() => model.windowSizes.length >= 1, {
+      timeoutMs: 500,
+      errorMessage: 'initial WindowSizeMsg never arrived'
+    });
+
+    const suspendDeferred = createDeferred<void>();
+    const programWithSuspend = program as Program & { suspendProcess(): Promise<void> };
+    programWithSuspend.suspendProcess = vi.fn(() => suspendDeferred.promise);
+
+    await sendMessage(program, { type: 'bubbletea/suspend' });
+
+    await waitFor(() => input.rawModeCalls.at(-1) === false, {
+      timeoutMs: 500,
+      errorMessage: 'raw mode was not disabled during suspend'
+    });
+
+    output.columns = 140;
+    output.rows = 51;
+
+    suspendDeferred.resolve();
+
+    await waitFor(() => input.rawModeCalls.at(-1) === true, {
+      timeoutMs: 500,
+      errorMessage: 'raw mode was not restored after resume'
+    });
+    await waitFor(() => model.resumeCount === 1, {
+      timeoutMs: 500,
+      errorMessage: 'ResumeMsg was not emitted after resuming'
+    });
+
+    await waitFor(() => model.windowSizes.length >= 2, {
+      timeoutMs: 500,
+      errorMessage: 'WindowSizeMsg was not emitted after resuming'
+    });
+
+    const [, resized] = model.windowSizes;
+    expect(resized).toEqual({ width: 140, height: 51 });
+
+    input.end('q');
+    const result = await runPromise;
+    expect(result.err).toBeNull();
   });
 });
